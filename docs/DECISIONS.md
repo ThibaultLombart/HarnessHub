@@ -57,3 +57,13 @@ Global/project skills, MCP, individual files, and archive/config uploads are exc
 An explicit administrator command authorizes ordinary HarnessHub operations, including creating/cloning projects and installing Pi. Destructive or hard-to-reverse HarnessHub operations require a separate confirmation, including deletion, overwrite, public repository creation, and destructive Git actions. Commands inside a Pi session follow Pi's own approval configuration; that configuration cannot authorize operations performed by HarnessHub.
 
 If a mapped Discord channel or project directory is manually missing or renamed, HarnessHub reports degraded state and requires explicit repair. It does not silently recreate, remap, or delete the counterpart.
+
+## D-011 — Pi integration uses a supervised RPC subprocess
+**Status: accepted**
+
+HarnessHub runs one persistent Pi RPC process per active project, with a configurable process limit. RPC preserves Pi-native sessions while isolating process crashes and keeping Pi-specific protocol handling inside `PiAdapter`. The client implements Pi's strict LF-delimited JSONL framing rather than generic line parsing. Project-local executable Pi resources are disabled with `--no-approve` in the MVP; a future explicit trust workflow may enable them. HarnessHub installs the pinned compatible Pi release into its writable state directory rather than requiring global npm permissions.
+
+## D-012 — Persistence uses Node's built-in SQLite API
+**Status: accepted**
+
+The MVP uses `node:sqlite` with Node.js 22.5 or newer instead of a native third-party SQLite addon. This keeps installation reproducible without a compiler toolchain while retaining real SQLite migrations, foreign keys, WAL mode, busy timeout, and transaction boundaries.

@@ -2,6 +2,8 @@
 
 The roadmap is ordered by **usable vertical slices**, not by technical layers built in advance.
 
+Implementation now exists for the M0–M3 MVP path. Automated local checks cover its core and infrastructure contracts, but these milestones remain unverified against a real Discord guild, authenticated live Pi task, and Linux/systemd host; `docs/CURRENT_STATE.md` records those reservations.
+
 ## M0 — Executable foundation
 
 Goal: a clean, testable, persistent local service.

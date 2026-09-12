@@ -260,7 +260,7 @@ HarnessHub must be able to:
 - detect the installation and version;
 - explicitly install Pi when the user authorizes it;
 - work inside the exact project directory;
-- use the most stable Pi integration mode for an external UI, with an initial preference for RPC/a separate process;
+- use Pi's RPC mode in a separate supervised process, with strict LF-delimited JSONL framing;
 - send a prompt and receive useful events;
 - identify/preserve a session when Pi supports it;
 - stop a session cleanly;

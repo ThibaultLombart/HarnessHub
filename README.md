@@ -1,28 +1,49 @@
 # HarnessHub
 
-HarnessHub is a self-hosted control plane operated from Discord for managing development workspaces and their coding harnesses.
+HarnessHub is a self-hosted Discord control plane for managing local Git workspaces and Pi coding sessions on an always-on Linux host. HarnessHub routes, validates, persists, and supervises; Pi remains responsible for coding work.
 
-The goal is simple: let an always-on VM handle development work while projects are managed remotely from Discord, without turning HarnessHub into another AI agent.
+## MVP capabilities
 
-## Reference documents
+- one configured Discord guild and administrator;
+- idempotent `/setup` for a private `HARNESSHUB` category and `#workspace-management` channel;
+- empty Git project creation or HTTPS/SSH repository cloning;
+- one persisted project directory ↔ Discord channel mapping;
+- Pi detection, pinned non-root installation, and native authentication status;
+- persistent Pi RPC sessions in the exact project directory;
+- ordinary project-channel messages as prompts;
+- compact progress, stop/resume controls, process-crash handling, and restart reconciliation.
 
-1. `AGENTS.md` — general quality contract for AI development agents.
-2. `PROJECT.md` — HarnessHub product vision and architecture.
-3. `docs/CURRENT_STATE.md` — actual project state and next step.
-4. `docs/ROADMAP.md` — MVP construction order.
-5. `docs/SECURITY.md` — project-specific security invariants.
-6. `docs/DECISIONS.md` — durable architecture/product decisions.
-7. `docs/DEVELOPMENT_GIT.md` — mandatory Git workflow during development.
-8. `START_HERE.md` — recommended first prompt for Pi.
+Skills, MCP, uploads, provider repository management, model selection, and multi-user operation are deliberately outside this MVP.
 
-## Pi
+## Development
 
-Pi agent configs live in `.pi/agents/`:
+Requires Node.js 22.5–24 and Git.
 
-- `orchestrator` — primary agent;
-- `explorer` — read-only repository exploration;
-- `implementer` — focused implementation;
-- `reviewer` — independent review and verification;
-- `security` — audit of trust-sensitive surfaces.
+```bash
+npm ci
+npm run check
+```
 
-The project deliberately starts with Pi as the first supported harness. The architecture must allow additional harnesses without pretending they all support the same capabilities.
+The checks cover formatting, strict linting, type checking, unit/integration tests, and the production build. Runtime configuration is documented in `.env.example`.
+
+## Install and operate
+
+See [`docs/INSTALLATION.md`](docs/INSTALLATION.md) for the non-root Linux/systemd procedure. Real credentials belong in `/etc/harnesshub/harnesshub.env`, never in this repository or Discord.
+
+The principal Discord flow is:
+
+1. `/setup`
+2. `/project create name:<name> [repository:<https-or-ssh-url>]` in `#workspace-management`
+3. `/harness detect` and `/harness auth`
+4. send a normal message in the project channel
+5. use `/session stop` or `/session resume` when needed
+
+## Project documentation
+
+- `AGENTS.md` — development and validation contract
+- `PROJECT.md` — product and architecture source of truth
+- `docs/ROADMAP.md` — vertical milestones
+- `docs/SECURITY.md` — security invariants
+- `docs/DECISIONS.md` — durable decisions
+- `docs/DEVELOPMENT_GIT.md` — mandatory Git workflow
+- `docs/CURRENT_STATE.md` — verified current state and limitations

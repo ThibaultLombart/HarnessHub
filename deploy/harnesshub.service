@@ -1,0 +1,32 @@
+[Unit]
+Description=HarnessHub Discord control plane
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=harnesshub
+Group=harnesshub
+WorkingDirectory=/opt/harnesshub
+EnvironmentFile=/etc/harnesshub/harnesshub.env
+ExecStart=/usr/bin/node /opt/harnesshub/dist/main.js
+Restart=on-failure
+RestartSec=5
+TimeoutStopSec=30
+NoNewPrivileges=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+ReadWritePaths=/var/lib/harnesshub /srv/harnesshub/workspaces
+MemoryMax=4G
+TasksMax=256
+LimitNOFILE=8192
+UMask=0077
+
+[Install]
+WantedBy=multi-user.target
