@@ -2,6 +2,7 @@ import {
   ChannelType,
   Client,
   PermissionFlagsBits,
+  OverwriteType,
   type CategoryChannel,
   type Guild,
   type TextChannel,
@@ -129,18 +130,21 @@ export class DiscordResourceGateway implements DiscordResources {
 
   private permissions(guild: Guild): readonly {
     id: string;
+    type: OverwriteType;
     allow?: readonly bigint[];
     deny?: readonly bigint[];
   }[] {
     const botId = this.client.user?.id;
     const entries: {
       id: string;
+      type: OverwriteType;
       allow?: readonly bigint[];
       deny?: readonly bigint[];
     }[] = [
-      { id: guild.roles.everyone.id, deny: [PermissionFlagsBits.ViewChannel] },
+      { id: guild.roles.everyone.id, type: OverwriteType.Role, deny: [PermissionFlagsBits.ViewChannel] },
       {
         id: this.administratorId,
+        type: OverwriteType.Member,
         allow: [
           PermissionFlagsBits.ViewChannel,
           PermissionFlagsBits.SendMessages,
@@ -151,6 +155,7 @@ export class DiscordResourceGateway implements DiscordResources {
     if (botId !== undefined) {
       entries.push({
         id: botId,
+        type: OverwriteType.Member,
         allow: [
           PermissionFlagsBits.ViewChannel,
           PermissionFlagsBits.SendMessages,
