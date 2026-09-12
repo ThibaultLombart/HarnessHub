@@ -12,16 +12,17 @@ Goal: a clean, testable, persistent local service.
 - SQLite + migrations;
 - minimal Job model;
 - internal health check;
+- non-root Linux/systemd service packaging and operator setup documentation;
 - local quality gates: format/lint/typecheck/tests/build.
 
-**Done when:** the service starts against an empty database, migrates cleanly, restarts with its state intact, and passes all gates.
+**Done when:** the service starts against an empty database, migrates cleanly, restarts with its state intact, has a verifiable non-root systemd installation path, and passes all gates.
 
 ## M1 — Discord bootstrap
 
 Goal: connect one guild and create the workspace.
 
 - bot connection;
-- admin allowlist;
+- one configured guild and administrator allowlist;
 - `/setup`;
 - HarnessHub category;
 - `#workspace-management`;
@@ -34,16 +35,17 @@ Goal: connect one guild and create the workspace.
 
 Goal: create a project that can actually be managed.
 
-- `/project create`;
-- name/slug validation;
+- `/project create` for an empty project or HTTPS/SSH clone;
+- name/slug and repository URL validation;
 - directory inside workspace root;
 - dedicated channel;
 - DB record;
-- Git initialization according to the discovery decision;
-- `/project status`;
+- automatic Git initialization for empty projects;
+- clone using only service-account credentials, with no embedded URL credentials or automatic SSH host-key acceptance;
+- `/project status`, including explicit degraded state for missing mapped resources;
 - coherent rollback on partial failure.
 
-**Done when:** creation, errors, reboot, and the decided delete/archive flow are tested without silent desynchronization.
+**Done when:** empty creation, cloning, unsafe input, partial failures, manual mapping drift, and reboot are tested without silent desynchronization.
 
 ## M3 — Minimal PiAdapter
 
@@ -53,19 +55,21 @@ Goal: talk to Pi from a project channel.
 - capability model;
 - RPC vs SDK spike;
 - start in the correct cwd;
-- prompt → events → Discord response;
-- stop;
+- authorized ordinary project-channel message → prompt → events → compact Discord response;
+- reject a concurrent prompt with a clear busy response;
+- stop/resume interactions;
 - session state;
-- handled process crash.
+- handled process crash;
+- use Pi's existing/default model and detected native service-account authentication.
 
-**Done when:** two distinct projects never mix cwd, sessions, or messages.
+**Done when:** two distinct projects never mix cwd, sessions, or messages; concurrent prompts do not overlap; and no model output or sensitive process detail is leaked to the wrong channel.
 
 ## M4 — Authentication and models
 
-Goal: use the harness's native login mechanisms.
+Goal: extend the MVP's native auth-status detection with Discord-assisted login and model choice.
 
 - auth status;
-- Discord-compatible login flow;
+- Discord-compatible native login flow;
 - no unnecessary secret duplication;
 - available models;
 - project/session model selection according to Pi capabilities;
@@ -89,7 +93,7 @@ Goal: genuinely prepare a project from Discord.
 
 - global/project skills;
 - visible source and compatibility;
-- simple uploads;
+- bounded individual file uploads;
 - inspected ZIP + safe extraction;
 - overwrite/conflict policy;
 - harness configuration files.

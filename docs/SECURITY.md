@@ -33,6 +33,8 @@ Treat as untrusted:
 13. Child processes have explicit lifecycle, timeout/cancellation, and cleanup.
 14. Persistent state must not rely on a PID alone.
 15. Errors returned to Discord must not expose secrets, sensitive internal stacks, or unnecessary private paths.
+16. Repository URLs containing credentials are rejected. Clones use only service-account credentials, and unknown SSH host keys are never accepted automatically.
+17. Pi's internal approval configuration does not authorize privileged HarnessHub operations; destructive or hard-to-reverse HarnessHub actions require their own explicit confirmation.
 
 ## Surfaces requiring the `security` subagent
 
