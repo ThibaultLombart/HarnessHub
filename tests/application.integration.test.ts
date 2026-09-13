@@ -98,6 +98,10 @@ describe("HarnessHubApplication", () => {
     await app.setProjectModel({ ...actor, channelId: project.channelId }, { model: "fake/model" });
     await app.prompt({ ...actor, channelId: project.channelId, content: "work" }, () => undefined);
     expect(startSession).toHaveBeenCalledWith(expect.objectContaining({ modelPattern: "fake/model" }));
+    const status = await app.projectStatus({ ...actor, channelId: project.channelId });
+    expect(status).toContain("Model: fake/model");
+    expect(status).toContain("Resources: project:npm:demo-pi-pack [installed]");
+    expect(status).toContain("Recent jobs: install-resource [succeeded]");
     first.close();
 
     const second = Database.open(databasePath);

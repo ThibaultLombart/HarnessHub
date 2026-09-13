@@ -156,6 +156,15 @@ export class JobRepository {
     ).map(mapJob);
   }
 
+  public listRecentByProject(projectId: string, limit = 5): Job[] {
+    const safeLimit = Math.max(1, Math.min(10, Math.floor(limit)));
+    return (
+      this.database
+        .prepare("SELECT * FROM jobs WHERE project_id = ? ORDER BY created_at DESC, rowid DESC LIMIT ?")
+        .all(projectId, safeLimit) as JobRow[]
+    ).map(mapJob);
+  }
+
   public transition(id: string, target: JobStatus, safeError?: string): Job {
     const current = this.requireById(id);
     transitionJob(current.status, target);
@@ -266,7 +275,7 @@ export class ProjectRepository {
     this.database.prepare("DELETE FROM project_model_preferences WHERE project_id = ?").run(id);
     this.database.prepare("DELETE FROM harness_resources WHERE project_id = ?").run(id);
     this.database.prepare("DELETE FROM harness_sessions WHERE project_id = ?").run(id);
-    this.database.prepare("DELETE FROM jobs WHERE project_id = ?").run(id);
+    this.database.prepare("UPDATE jobs SET project_id = NULL WHERE project_id = ?").run(id);
     this.database.prepare("DELETE FROM projects WHERE id = ?").run(id);
   }
 }

@@ -115,7 +115,7 @@ export class HarnessHubApplication {
     if (input.confirm !== project.slug)
       throw new ProjectDeletionBlockedError("Type the project slug to confirm archival");
     await this.harness.stop(actor, project.id);
-    return this.runJob("archive-project", () => this.database.projects.archive(project.id));
+    return this.runJob("archive-project", () => this.database.projects.archive(project.id), project.id);
   }
 
   public async deleteProject(
@@ -133,13 +133,17 @@ export class HarnessHubApplication {
       throw new ProjectDeletionBlockedError("Refusing to delete a project with uncommitted Git changes");
     }
     await this.harness.stop(actor, project.id);
-    return this.runJob("delete-project", async () => {
-      const deleted = this.database.projects.archive(project.id);
-      await this.discord.deleteProjectChannel(project.channelId);
-      await this.files.removeProject(project.path);
-      this.database.projects.delete(project.id);
-      return deleted;
-    });
+    return this.runJob(
+      "delete-project",
+      async () => {
+        const deleted = this.database.projects.archive(project.id);
+        await this.discord.deleteProjectChannel(project.channelId);
+        await this.files.removeProject(project.path);
+        this.database.projects.delete(project.id);
+        return deleted;
+      },
+      project.id,
+    );
   }
 
   public listJobs(actor: Actor & { channelId: string }, limit = 10): Job[] {
@@ -165,13 +169,16 @@ export class HarnessHubApplication {
       throw new ManagementChannelRequiredError();
     }
     if (project !== null && !(await this.projectResourcesMatch(project))) throw new ProjectDegradedError();
-    return this.runJob("install-resource", async () =>
-      this.manageResources.install({
-        scope: input.scope,
-        project,
-        workspaceRoot: this.config.workspaceRoot,
-        source: input.source,
-      }),
+    return this.runJob(
+      "install-resource",
+      async () =>
+        this.manageResources.install({
+          scope: input.scope,
+          project,
+          workspaceRoot: this.config.workspaceRoot,
+          source: input.source,
+        }),
+      project?.id,
     );
   }
 
@@ -199,13 +206,16 @@ export class HarnessHubApplication {
       throw new ManagementChannelRequiredError();
     }
     if (project !== null && !(await this.projectResourcesMatch(project))) throw new ProjectDegradedError();
-    return this.runJob("remove-resource", async () =>
-      this.manageResources.remove({
-        id: input.id,
-        scope: input.scope,
-        project,
-        workspaceRoot: this.config.workspaceRoot,
-      }),
+    return this.runJob(
+      "remove-resource",
+      async () =>
+        this.manageResources.remove({
+          id: input.id,
+          scope: input.scope,
+          project,
+          workspaceRoot: this.config.workspaceRoot,
+        }),
+      project?.id,
     );
   }
 
@@ -267,6 +277,10 @@ export class HarnessHubApplication {
     const git = directoryExists ? await gitStatus(project.path) : "unavailable";
     const session = this.database.sessions.findLatestByProject(project.id);
     const state = directoryExists && channelExists ? "ready" : "degraded — explicit repair required";
+    const resources = this.manageResources
+      .list({ project })
+      .filter((resource) => resource.status !== "removed");
+    const jobs = this.database.jobs.listRecentByProject(project.id, 3);
     return [
       `HarnessHub / ${project.name}`,
       `State: ${state}`,
@@ -274,6 +288,9 @@ export class HarnessHubApplication {
       `Model: ${modelPreferenceText(this.database.modelPreferences.findByProject(project.id))}`,
       `Session: ${session?.status ?? "not started"}`,
       `Git: ${git}`,
+      `Remote: ${project.gitRemote ?? "none"}`,
+      `Resources: ${resources.length === 0 ? "none" : resources.map((resource) => `${resource.scope}:${resource.source} [${resource.status}]`).join(", ")}`,
+      `Recent jobs: ${jobs.length === 0 ? "none" : jobs.map((job) => `${job.type} [${job.status}]`).join(", ")}`,
     ].join("\n");
   }
 
@@ -364,8 +381,8 @@ export class HarnessHubApplication {
     return workspace;
   }
 
-  private async runJob<T>(type: string, operation: () => T | Promise<T>): Promise<T> {
-    const job = this.database.jobs.create({ type });
+  private async runJob<T>(type: string, operation: () => T | Promise<T>, projectId?: string): Promise<T> {
+    const job = this.database.jobs.create({ type, ...(projectId === undefined ? {} : { projectId }) });
     this.database.jobs.transition(job.id, "running");
     try {
       const result = await operation();
