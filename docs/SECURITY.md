@@ -62,6 +62,7 @@ Pi runs as a child of the same non-root service identity as HarnessHub. The syst
 
 - Discord permissions/roles;
 - provider/GitHub/GitLab authentication;
+- Codex usage polling reads Pi's protected OAuth credential only in memory and never persists or logs token material;
 - `child_process` / shell execution;
 - filesystem, symlinks, uploads, ZIP archives;
 - repository clone/import;

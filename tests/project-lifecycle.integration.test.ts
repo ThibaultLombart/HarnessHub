@@ -31,6 +31,7 @@ describe("project lifecycle", () => {
       workspaceRoot,
       databasePath: path.join(root, "state.sqlite"),
       piCommand: "pi",
+      piAgentDirectory: path.join(root, "pi-agent"),
       maxConcurrentSessions: 2,
       updateCheckout: root,
       logLevel: "silent",

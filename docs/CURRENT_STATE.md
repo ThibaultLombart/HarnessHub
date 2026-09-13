@@ -30,6 +30,7 @@ The base MVP was validated on a real Linux/systemd VM, Discord guild, and authen
 - persistent resource state: `installed`, `failed`, `removed`;
 - project model management through `/model list`, `/model status`, `/model set`, and `/model reset`;
 - per-project model preference persisted in SQLite and supplied to Pi sessions via `--model provider/model-id`;
+- read-only Codex usage indicator channel showing short and weekly subscription windows, refreshed every 15 minutes and after prompts;
 - project archive/delete commands with exact slug confirmation;
 - deletion protections for active sessions and dirty Git worktrees;
 - enriched `/project status` dashboard with model, remote, resources, and recent jobs;
@@ -73,6 +74,7 @@ The live exercise exposed and resolved incorrect application artifact modes, inh
 - run a full live regression of all new commands from `feat/resource-management` on the VM;
 - validate real Pi package install/remove from at least one trusted package source;
 - validate real project model switch against the authenticated provider;
+- validate the Codex quota endpoint and Discord channel rename against a real OpenAI OAuth subscription (the endpoint is unofficial and may change);
 - validate `/project delete` on a disposable project and confirm dirty-Git protection;
 - validate `/files upload` from Discord with normal and rejected paths;
 - validate `/system update-check` and decide whether to authorize `/system update-apply` via a root helper or sudoers;

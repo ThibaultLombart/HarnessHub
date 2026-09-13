@@ -32,6 +32,7 @@ describe("HarnessHubApplication", () => {
       workspaceRoot,
       databasePath,
       piCommand: "pi",
+      piAgentDirectory: path.join(root, "pi-agent"),
       maxConcurrentSessions: 2,
       updateCheckout: root,
       logLevel: "silent",

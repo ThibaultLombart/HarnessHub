@@ -246,6 +246,7 @@ export class DiscordBot {
     private readonly token: string,
     private readonly application: HarnessHubApplication,
     private readonly logger: Logger,
+    private readonly refreshProviderUsage?: () => Promise<void>,
   ) {}
 
   public async start(): Promise<void> {
@@ -296,6 +297,7 @@ export class DiscordBot {
       if (interaction.commandName === "setup") {
         const workspace = await this.application.setup(actor);
         await interaction.editReply(`HarnessHub is ready in <#${workspace.managementChannelId}>.`);
+        this.triggerProviderUsageRefresh();
       } else if (interaction.commandName === "project") {
         const subcommand = interaction.options.getSubcommand();
         if (subcommand === "create") {
@@ -582,7 +584,16 @@ export class DiscordBot {
         components: [],
         allowedMentions: { parse: [] },
       });
+    } finally {
+      this.triggerProviderUsageRefresh();
     }
+  }
+
+  private triggerProviderUsageRefresh(): void {
+    if (this.refreshProviderUsage === undefined) return;
+    void this.refreshProviderUsage().catch((error: unknown) => {
+      this.logger.warn({ error }, "Could not trigger provider usage refresh");
+    });
   }
 }
 

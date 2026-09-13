@@ -7,6 +7,8 @@ import { ProjectFiles } from "./infrastructure/project-files.js";
 import { PiAdapter } from "./infrastructure/pi/pi-adapter.js";
 import { createDiscordClient, DiscordBot } from "./infrastructure/discord/discord-bot.js";
 import { DiscordResourceGateway } from "./infrastructure/discord/discord-resources.js";
+import { CodexUsageClient } from "./infrastructure/provider-usage/codex-usage.js";
+import { ProviderUsageMonitor } from "./infrastructure/provider-usage/provider-usage-monitor.js";
 import { HarnessHubApplication } from "./application/application.js";
 import { checkHealth } from "./health.js";
 
@@ -27,13 +29,23 @@ async function main(): Promise<void> {
   const client = createDiscordClient();
   const discord = new DiscordResourceGateway(client, config.discordAdminUserId);
   const application = new HarnessHubApplication(runtimeConfig, database, discord, files, adapter);
-  const bot = new DiscordBot(client, config.discordGuildId, config.discordToken, application, logger);
+  const usageMonitor = new ProviderUsageMonitor(
+    database.workspaces,
+    config.discordGuildId,
+    new CodexUsageClient(config.piAgentDirectory),
+    discord,
+    logger,
+  );
+  const bot = new DiscordBot(client, config.discordGuildId, config.discordToken, application, logger, () =>
+    usageMonitor.refresh(),
+  );
 
   let shuttingDown = false;
   const shutdown = async (signal: string): Promise<void> => {
     if (shuttingDown) return;
     shuttingDown = true;
     logger.info({ signal }, "HarnessHub shutting down");
+    usageMonitor.stop();
     await bot.stop();
     await adapter.dispose();
     database.close();
@@ -52,6 +64,7 @@ async function main(): Promise<void> {
     if (health.status !== "healthy") throw new Error("HarnessHub startup health check failed");
     logger.info({ interruptedJobs, health }, "HarnessHub starting");
     await bot.start();
+    usageMonitor.start();
   } catch (error) {
     await shutdown("startup-failure");
     throw error;

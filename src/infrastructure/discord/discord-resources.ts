@@ -73,6 +73,56 @@ export class DiscordResourceGateway implements DiscordResources {
     }
   }
 
+  public async updateProviderUsageIndicator(
+    workspace: GuildWorkspace,
+    provider: string,
+    channelName: string,
+  ): Promise<void> {
+    if (!/^[a-z0-9-]{1,32}$/.test(provider) || !/^[a-z0-9-]{1,100}$/.test(channelName)) {
+      throw new Error("Invalid provider usage channel identity");
+    }
+    const guild = await this.client.guilds.fetch(workspace.discordGuildId);
+    const channels = await guild.channels.fetch();
+    const topic = `HarnessHub provider usage:${provider}`;
+    let indicator = channels.find(
+      (channel): channel is TextChannel =>
+        channel?.type === ChannelType.GuildText &&
+        channel.parentId === workspace.categoryId &&
+        channel.topic === topic,
+    );
+    indicator ??= await guild.channels.create({
+      name: channelName,
+      type: ChannelType.GuildText,
+      parent: workspace.categoryId,
+      topic,
+      reason: "HarnessHub provider usage indicator",
+    });
+    const administratorPermissions = indicator.permissionOverwrites.cache.get(this.administratorId);
+    const readOnlyPermissions = [
+      PermissionFlagsBits.SendMessages,
+      PermissionFlagsBits.SendMessagesInThreads,
+      PermissionFlagsBits.CreatePublicThreads,
+      PermissionFlagsBits.CreatePrivateThreads,
+      PermissionFlagsBits.AddReactions,
+    ];
+    if (readOnlyPermissions.some((permission) => administratorPermissions?.deny.has(permission) !== true)) {
+      await indicator.permissionOverwrites.edit(
+        this.administratorId,
+        {
+          SendMessages: false,
+          SendMessagesInThreads: false,
+          CreatePublicThreads: false,
+          CreatePrivateThreads: false,
+          AddReactions: false,
+        },
+        { reason: "Keep provider usage indicator read-only" },
+      );
+    }
+    if (indicator.name !== channelName) {
+      await indicator.setName(channelName, "Refresh HarnessHub provider usage indicator");
+    }
+  }
+
   public async createProjectChannel(workspace: GuildWorkspace, slug: string): Promise<string> {
     const guild = await this.client.guilds.fetch(workspace.discordGuildId);
     const channels = await guild.channels.fetch();
