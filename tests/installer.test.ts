@@ -41,4 +41,10 @@ describe("Linux installer", () => {
     expect(source).toContain("--no-session");
     expect(source).toContain("--no-approve");
   });
+
+  it("does not invalidate a completed installation when optional Pi login fails", () => {
+    const source = fs.readFileSync(installer, "utf8");
+    expect(source).toContain("if ! open_pi_login; then");
+    expect(source).toContain("Pi login did not complete, but HarnessHub remains installed");
+  });
 });

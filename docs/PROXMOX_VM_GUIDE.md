@@ -343,9 +343,13 @@ Redémarre ensuite le service :
 sudo systemctl restart harnesshub
 ```
 
+### Pi signale `MissingSessionCwdError`
+
+Une ancienne session Pi référence un dossier de travail qui n’existe plus. Cela n’endommage ni l’installation actuelle ni ses dépôts. Ne lance pas la commande de rollback si le service HarnessHub est déjà actif ; relance simplement l’authentification avec la commande propre ci-dessous.
+
 ### `/harness auth` ne trouve aucun fournisseur
 
-Relance Pi avec son répertoire de configuration réel :
+Relance Pi avec son répertoire de configuration réel. Cette même commande contourne aussi `MissingSessionCwdError` :
 
 ```bash
 sudo -u harnesshub env \

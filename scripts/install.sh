@@ -240,25 +240,31 @@ else
   printf 'Service installation complete; start it later with: sudo systemctl enable --now harnesshub\n'
 fi
 
+open_pi_login() {
+  runuser -u "${APP_USER}" -- env \
+    --chdir="${STATE_DIR}" \
+    -u AI_AGENT \
+    -u PI_CODING_AGENT \
+    -u PI_SESSION_ID \
+    -u PI_SESSION_FILE \
+    -u PI_PROVIDER \
+    -u PI_MODEL \
+    -u PI_REASONING_LEVEL \
+    HOME="${STATE_DIR}" \
+    PI_CODING_AGENT_DIR="${STATE_DIR}/pi-agent" \
+    "${STATE_DIR}/tools/node_modules/.bin/pi" \
+    --no-session \
+    --no-approve
+}
+
 if [[ "${NO_PI_LOGIN}" == false && -t 0 ]]; then
   printf '\nPi is installed. Native provider login still requires your approval.\n'
   read -r -p "Open Pi login now? [Y/n]: " login_choice
   if [[ ! "${login_choice}" =~ ^[Nn]$ ]]; then
     printf 'In Pi, run /login and exit when authentication is complete.\n'
-    runuser -u "${APP_USER}" -- env \
-      --chdir="${STATE_DIR}" \
-      -u AI_AGENT \
-      -u PI_CODING_AGENT \
-      -u PI_SESSION_ID \
-      -u PI_SESSION_FILE \
-      -u PI_PROVIDER \
-      -u PI_MODEL \
-      -u PI_REASONING_LEVEL \
-      HOME="${STATE_DIR}" \
-      PI_CODING_AGENT_DIR="${STATE_DIR}/pi-agent" \
-      "${STATE_DIR}/tools/node_modules/.bin/pi" \
-      --no-session \
-      --no-approve
+    if ! open_pi_login; then
+      printf 'Pi login did not complete, but HarnessHub remains installed. Retry it using /opt/harnesshub/docs/INSTALLATION.md.\n' >&2
+    fi
   fi
 fi
 
