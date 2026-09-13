@@ -4,6 +4,12 @@ import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import type { Config } from "../config.js";
 import type { HarnessAdapter, HarnessEvent } from "../domain/harness.js";
+import {
+  modelPattern,
+  parseModelPattern,
+  type ModelDescriptor,
+  type ModelPreference,
+} from "../domain/model.js";
 import type { Project } from "../domain/project.js";
 import type { HarnessResource, ResourceScope } from "../domain/resource.js";
 import type { GuildWorkspace } from "../domain/workspace.js";
@@ -31,6 +37,13 @@ export class ProjectDegradedError extends Error {
   }
 }
 
+export class ModelManagementUnsupportedError extends Error {
+  public constructor() {
+    super("The configured harness does not support model management");
+    this.name = "ModelManagementUnsupportedError";
+  }
+}
+
 export class ManagementChannelRequiredError extends Error {
   public constructor() {
     super("This command must be used in #workspace-management");
@@ -49,11 +62,15 @@ export class HarnessHubApplication {
     private readonly database: Database,
     discord: DiscordResources,
     files: ProjectFiles,
-    adapter: HarnessAdapter,
+    private readonly adapter: HarnessAdapter,
   ) {
     this.harness = new HarnessHub(
       { guildId: config.discordGuildId, administratorId: config.discordAdminUserId },
-      { projects: database.projects, sessions: database.sessions },
+      {
+        projects: database.projects,
+        modelPreferences: database.modelPreferences,
+        sessions: database.sessions,
+      },
       adapter,
     );
     this.setupWorkspace = new SetupWorkspace(database.workspaces, discord);
@@ -138,6 +155,51 @@ export class HarnessHubApplication {
     );
   }
 
+  public async listModels(actor: Actor & { channelId: string }): Promise<readonly ModelDescriptor[]> {
+    this.harness.authorize(actor);
+    const workspace = this.requireWorkspace(actor.guildId);
+    const project = this.database.projects.findByChannelId(actor.channelId);
+    const cwd = project === undefined ? workspace.workspaceRoot : project.path;
+    if (project !== undefined && !(await this.projectResourcesMatch(project)))
+      throw new ProjectDegradedError();
+    const listModels = this.adapterSupportsModels().listModels;
+    if (listModels === undefined) throw new ModelManagementUnsupportedError();
+    return listModels.bind(this.adapter)(cwd);
+  }
+
+  public modelStatus(actor: Actor & { channelId: string }): ModelPreference | null {
+    const project = this.projectForChannel(actor);
+    return this.database.modelPreferences.findByProject(project.id) ?? null;
+  }
+
+  public async setProjectModel(
+    actor: Actor & { channelId: string },
+    input: { model: string },
+  ): Promise<ModelPreference> {
+    const project = this.projectForChannel(actor);
+    const parsed = parseModelPattern(input.model);
+    if (!(await this.projectResourcesMatch(project))) throw new ProjectDegradedError();
+    const adapter = this.adapterSupportsModels();
+    if (adapter.listModels === undefined) throw new ModelManagementUnsupportedError();
+    const models = await adapter.listModels(project.path);
+    if (!models.some((model) => model.provider === parsed.provider && model.id === parsed.modelId)) {
+      throw new Error("Selected model is not available to Pi");
+    }
+    const preference = this.database.modelPreferences.save({
+      projectId: project.id,
+      provider: parsed.provider,
+      modelId: parsed.modelId,
+    });
+    if (adapter.setSessionModel !== undefined)
+      await adapter.setSessionModel(project.id, parsed.provider, parsed.modelId);
+    return preference;
+  }
+
+  public resetProjectModel(actor: Actor & { channelId: string }): void {
+    const project = this.projectForChannel(actor);
+    this.database.modelPreferences.remove(project.id);
+  }
+
   public async projectStatus(actor: Actor & { channelId: string }): Promise<string> {
     this.harness.authorize(actor);
     const project = this.database.projects.findByChannelId(actor.channelId);
@@ -155,6 +217,7 @@ export class HarnessHubApplication {
       `HarnessHub / ${project.name}`,
       `State: ${state}`,
       `Harness: ${project.harnessId ?? "not selected"}`,
+      `Model: ${modelPreferenceText(this.database.modelPreferences.findByProject(project.id))}`,
       `Session: ${session?.status ?? "not started"}`,
       `Git: ${git}`,
     ].join("\n");
@@ -231,6 +294,10 @@ export class HarnessHubApplication {
     return directory && channel && workspaceValid;
   }
 
+  private adapterSupportsModels(): Pick<HarnessAdapter, "listModels" | "setSessionModel"> {
+    return this.adapter;
+  }
+
   private requireManagementChannel(actor: Actor & { channelId: string }): void {
     this.harness.authorize(actor);
     const workspace = this.requireWorkspace(actor.guildId);
@@ -286,6 +353,10 @@ async function gitStatus(cwd: string): Promise<string> {
   } catch {
     return "not a Git repository";
   }
+}
+
+function modelPreferenceText(preference: ModelPreference | undefined): string {
+  return preference === undefined ? "Pi default" : modelPattern(preference);
 }
 
 function resourceHarnessPort(adapter: HarnessAdapter): ResourceHarnessPort {

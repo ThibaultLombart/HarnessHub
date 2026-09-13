@@ -15,6 +15,7 @@ import {
 import type { Logger } from "pino";
 import type { HarnessHubApplication } from "../../application/application.js";
 import type { HarnessEvent } from "../../domain/harness.js";
+import type { ModelDescriptor } from "../../domain/model.js";
 import type { HarnessResource, ResourceScope } from "../../domain/resource.js";
 import { SessionProgress } from "../../domain/session-progress.js";
 
@@ -49,6 +50,28 @@ const commands = [
       command.setName("auth").setDescription("Check native Pi provider authentication"),
     )
     .addSubcommand((command) => command.setName("install").setDescription("Explicitly install Pi")),
+  new SlashCommandBuilder()
+    .setName("model")
+    .setDescription("View and select the Pi model for a project")
+    .addSubcommand((command) => command.setName("list").setDescription("List available Pi models"))
+    .addSubcommand((command) =>
+      command.setName("status").setDescription("Show this project's selected model"),
+    )
+    .addSubcommand((command) =>
+      command
+        .setName("set")
+        .setDescription("Select the Pi model for this project")
+        .addStringOption((option) =>
+          option
+            .setName("model")
+            .setDescription("Model pattern, for example anthropic/claude-sonnet-4-5")
+            .setRequired(true)
+            .setMaxLength(200),
+        ),
+    )
+    .addSubcommand((command) =>
+      command.setName("reset").setDescription("Use Pi's default model for this project"),
+    ),
   new SlashCommandBuilder()
     .setName("resource")
     .setDescription("Manage Pi packages, skills, and harness resources")
@@ -208,6 +231,28 @@ export class DiscordBot {
           await this.application.installHarness({ ...actor, channelId: interaction.channelId });
           await interaction.editReply("Pi installation completed.");
         }
+      } else if (interaction.commandName === "model") {
+        const subcommand = interaction.options.getSubcommand();
+        if (subcommand === "list") {
+          const models = await this.application.listModels({ ...actor, channelId: interaction.channelId });
+          await interaction.editReply(formatModels(models));
+        } else if (subcommand === "status") {
+          const preference = this.application.modelStatus({ ...actor, channelId: interaction.channelId });
+          await interaction.editReply(
+            preference === null
+              ? "This project uses Pi's default model."
+              : `Selected model: ${preference.provider}/${preference.modelId}`,
+          );
+        } else if (subcommand === "set") {
+          const preference = await this.application.setProjectModel(
+            { ...actor, channelId: interaction.channelId },
+            { model: interaction.options.getString("model", true) },
+          );
+          await interaction.editReply(`Selected model: ${preference.provider}/${preference.modelId}.`);
+        } else {
+          this.application.resetProjectModel({ ...actor, channelId: interaction.channelId });
+          await interaction.editReply("This project now uses Pi's default model.");
+        }
       } else if (interaction.commandName === "resource") {
         const subcommand = interaction.options.getSubcommand();
         if (subcommand === "add") {
@@ -347,6 +392,21 @@ function actorFrom(guildId: string | null, userId: string): { guildId: string; u
   return { guildId: guildId ?? "", userId };
 }
 
+function formatModels(models: readonly ModelDescriptor[], maximumLength = 1900): string {
+  if (models.length === 0) return "No Pi models are currently available. Check native Pi authentication.";
+  const lines: string[] = [];
+  for (const model of models) {
+    const line = `${model.provider}/${model.id}${model.label === "" ? "" : ` — ${model.label}`}`;
+    const next = [...lines, line].join("\n");
+    if (next.length > maximumLength) {
+      lines.push(`…and ${String(models.length - lines.length)} more model(s).`);
+      break;
+    }
+    lines.push(line);
+  }
+  return lines.join("\n");
+}
+
 function resourceScope(value: string): ResourceScope {
   if (value === "global" || value === "project") return value;
   throw new Error("Invalid resource scope");
@@ -407,6 +467,8 @@ export function safeDiscordError(error: unknown): string {
       "ProjectDegradedError",
       "InvalidProjectInputError",
       "InvalidResourceInputError",
+      "InvalidModelInputError",
+      "ModelManagementUnsupportedError",
       "ResourceNotFoundError",
       "ResourceProjectRequiredError",
       "ResourceScopeMismatchError",

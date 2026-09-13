@@ -3,6 +3,7 @@ import path from "node:path";
 import { randomUUID } from "node:crypto";
 import { DatabaseSync as SqliteDatabase } from "node:sqlite";
 import { jobStatuses, transitionJob, type JobStatus } from "../domain/job.js";
+import type { ModelPreference } from "../domain/model.js";
 import type { Project } from "../domain/project.js";
 import {
   resourceScopes,
@@ -87,6 +88,14 @@ const migrations = [
   CREATE UNIQUE INDEX harness_resources_project_unique_idx
     ON harness_resources(harness_id, project_id, source) WHERE scope = 'project';
   CREATE INDEX harness_resources_scope_idx ON harness_resources(harness_id, scope, project_id, status);
+  `,
+  `
+  CREATE TABLE project_model_preferences (
+    project_id TEXT PRIMARY KEY REFERENCES projects(id) ON DELETE CASCADE,
+    provider TEXT NOT NULL,
+    model_id TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+  );
   `,
 ] as const;
 
@@ -265,6 +274,45 @@ type ResourceRow = {
   created_at: string;
   updated_at: string;
 };
+
+type ModelPreferenceRow = {
+  project_id: string;
+  provider: string;
+  model_id: string;
+  updated_at: string;
+};
+
+export class ModelPreferenceRepository {
+  public constructor(private readonly database: SqliteDatabase) {}
+
+  public findByProject(projectId: string): ModelPreference | undefined {
+    const row = this.database
+      .prepare("SELECT * FROM project_model_preferences WHERE project_id = ?")
+      .get(projectId) as ModelPreferenceRow | undefined;
+    return row === undefined ? undefined : mapModelPreference(row);
+  }
+
+  public save(input: { projectId: string; provider: string; modelId: string }): ModelPreference {
+    const now = new Date().toISOString();
+    this.database
+      .prepare(
+        `INSERT INTO project_model_preferences (project_id, provider, model_id, updated_at)
+         VALUES (?, ?, ?, ?)
+         ON CONFLICT(project_id) DO UPDATE SET
+           provider = excluded.provider,
+           model_id = excluded.model_id,
+           updated_at = excluded.updated_at`,
+      )
+      .run(input.projectId, input.provider, input.modelId, now);
+    const preference = this.findByProject(input.projectId);
+    if (preference === undefined) throw new Error("Model preference was not persisted");
+    return preference;
+  }
+
+  public remove(projectId: string): void {
+    this.database.prepare("DELETE FROM project_model_preferences WHERE project_id = ?").run(projectId);
+  }
+}
 
 export class ResourceRepository {
   public constructor(private readonly database: SqliteDatabase) {}
@@ -478,6 +526,7 @@ export class Database {
   public readonly sessions: SessionRepository;
   public readonly installations: HarnessInstallationRepository;
   public readonly resources: ResourceRepository;
+  public readonly modelPreferences: ModelPreferenceRepository;
 
   private constructor(private readonly sqlite: SqliteDatabase) {
     this.jobs = new JobRepository(sqlite);
@@ -486,6 +535,7 @@ export class Database {
     this.sessions = new SessionRepository(sqlite);
     this.installations = new HarnessInstallationRepository(sqlite);
     this.resources = new ResourceRepository(sqlite);
+    this.modelPreferences = new ModelPreferenceRepository(sqlite);
   }
 
   public static open(databasePath: string): Database {
@@ -613,6 +663,15 @@ function nullableDatabaseString(value: unknown): string | null {
   if (value === null) return null;
   if (typeof value !== "string") throw new Error("Database contains an invalid string value");
   return value;
+}
+
+function mapModelPreference(row: ModelPreferenceRow): ModelPreference {
+  return {
+    projectId: row.project_id,
+    provider: row.provider,
+    modelId: row.model_id,
+    updatedAt: row.updated_at,
+  };
 }
 
 function mapResource(row: ResourceRow): HarnessResource {

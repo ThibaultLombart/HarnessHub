@@ -45,14 +45,22 @@ describe("HarnessHubApplication", () => {
     const detect = vi.fn(async () => ({ installed: true, version: "test" }));
     const installPackageResource = vi.fn(async () => undefined);
     const removePackageResource = vi.fn(async () => undefined);
+    const listModels = vi.fn(async () => [{ provider: "fake", id: "model", label: "fake/model" }]);
+    const startSession = vi.fn(async () => ({
+      externalSessionId: "session",
+      isBusy: false,
+      sendPrompt: async () => "answer",
+      stop: async () => undefined,
+      close: async () => undefined,
+    }));
     const adapter: HarnessAdapter = {
       getCapabilities: () => new Set(),
       detect,
       install: async () => undefined,
       getAuthStatus: async () => ({ authenticated: true, providers: ["test"] }),
-      startSession: async () => {
-        throw new Error("not used");
-      },
+      listModels,
+      setSessionModel: async () => undefined,
+      startSession,
       getSession: () => undefined,
       stopSession: async () => undefined,
       installPackageResource,
@@ -87,6 +95,9 @@ describe("HarnessHubApplication", () => {
       cwd: path.join(workspaceRoot, "persistent-demo"),
       source: "npm:demo-pi-pack",
     });
+    await app.setProjectModel({ ...actor, channelId: project.channelId }, { model: "fake/model" });
+    await app.prompt({ ...actor, channelId: project.channelId, content: "work" }, () => undefined);
+    expect(startSession).toHaveBeenCalledWith(expect.objectContaining({ modelPattern: "fake/model" }));
     first.close();
 
     const second = Database.open(databasePath);
@@ -98,6 +109,10 @@ describe("HarnessHubApplication", () => {
       projectId: project.id,
       source: "npm:demo-pi-pack",
       status: "installed",
+    });
+    expect(second.modelPreferences.findByProject(project.id)).toMatchObject({
+      provider: "fake",
+      modelId: "model",
     });
     second.close();
   });

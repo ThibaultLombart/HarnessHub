@@ -1,3 +1,4 @@
+import type { ModelDescriptor } from "./model.js";
 import type { ResourceScope } from "./resource.js";
 
 export class SessionBusyError extends Error {
@@ -42,6 +43,7 @@ export type HarnessAdapter = {
     projectId: string;
     cwd: string;
     name: string;
+    modelPattern?: string;
     externalSessionId?: string;
     onEvent: (event: HarnessEvent) => void;
   }): Promise<HarnessSession>;
@@ -49,5 +51,7 @@ export type HarnessAdapter = {
   stopSession(projectId: string): Promise<void>;
   installPackageResource?(input: { scope: ResourceScope; cwd: string; source: string }): Promise<void>;
   removePackageResource?(input: { scope: ResourceScope; cwd: string; source: string }): Promise<void>;
+  listModels?(cwd: string): Promise<readonly ModelDescriptor[]>;
+  setSessionModel?(projectId: string, provider: string, modelId: string): Promise<void>;
   dispose(): Promise<void>;
 };

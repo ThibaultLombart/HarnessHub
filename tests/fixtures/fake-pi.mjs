@@ -70,13 +70,26 @@ process.stdin.on("data", (chunk) => {
       });
     } else if (command.type === "abort") {
       send({ id: command.id, type: "response", command: "abort", success: true });
+    } else if (command.type === "set_model") {
+      send({
+        id: command.id,
+        type: "response",
+        command: "set_model",
+        success: command.provider === "fake" && command.modelId === "model",
+        data: { provider: command.provider, id: command.modelId },
+      });
     } else if (command.type === "get_available_models") {
       send({
         id: command.id,
         type: "response",
         command: "get_available_models",
         success: true,
-        data: { models: [{ provider: "fake", id: "model" }] },
+        data: {
+          models: [
+            { provider: "fake", id: "model", name: "Fake Model" },
+            { provider: "other", id: "small" },
+          ],
+        },
       });
     }
   }

@@ -41,6 +41,7 @@ function subject(busy = false) {
   };
   const repositories: HarnessHubRepositories = {
     projects: { findByChannelId: vi.fn(() => project), findById: vi.fn(() => project) },
+    modelPreferences: { findByProject: vi.fn(() => undefined) },
     sessions: { findLatestByProject: vi.fn(() => undefined), recordStarted: vi.fn(), updateStatus: vi.fn() },
   };
   return {

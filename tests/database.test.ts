@@ -83,6 +83,41 @@ describe("Database", () => {
     database.close();
   });
 
+  it("persists and clears per-project model preferences", () => {
+    const database = Database.open(temporaryDatabasePath());
+    const workspace: GuildWorkspace = {
+      id: "workspace",
+      discordGuildId: "guild",
+      categoryId: "category",
+      managementChannelId: "management",
+      workspaceRoot: "/srv/workspaces",
+      createdAt: new Date().toISOString(),
+    };
+    const project: Project = {
+      id: "project",
+      workspaceId: workspace.id,
+      name: "Demo",
+      slug: "demo",
+      channelId: "channel",
+      path: "/srv/workspaces/demo",
+      harnessId: "pi",
+      gitRemote: null,
+      createdAt: new Date().toISOString(),
+      archivedAt: null,
+    };
+    database.workspaces.save(workspace);
+    database.projects.save(project);
+
+    database.modelPreferences.save({ projectId: project.id, provider: "fake", modelId: "model" });
+    expect(database.modelPreferences.findByProject(project.id)).toMatchObject({
+      provider: "fake",
+      modelId: "model",
+    });
+    database.modelPreferences.remove(project.id);
+    expect(database.modelPreferences.findByProject(project.id)).toBeUndefined();
+    database.close();
+  });
+
   it("reconciles interrupted jobs without touching terminal jobs", () => {
     const database = Database.open(temporaryDatabasePath());
     const running = database.jobs.create({ type: "clone" });
