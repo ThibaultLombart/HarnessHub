@@ -4,6 +4,15 @@ import { randomUUID } from "node:crypto";
 import { DatabaseSync as SqliteDatabase } from "node:sqlite";
 import { jobStatuses, transitionJob, type JobStatus } from "../domain/job.js";
 import type { Project } from "../domain/project.js";
+import {
+  resourceScopes,
+  resourceStatuses,
+  resourceTypes,
+  type HarnessResource,
+  type ResourceScope,
+  type ResourceStatus,
+  type ResourceType,
+} from "../domain/resource.js";
 import type { GuildWorkspace } from "../domain/workspace.js";
 
 const migrations = [
@@ -58,6 +67,26 @@ const migrations = [
   );
   CREATE INDEX jobs_status_idx ON jobs(status);
   CREATE INDEX sessions_project_idx ON harness_sessions(project_id);
+  `,
+  `
+  CREATE TABLE harness_resources (
+    id TEXT PRIMARY KEY,
+    harness_id TEXT NOT NULL,
+    type TEXT NOT NULL CHECK(type IN ('package')),
+    scope TEXT NOT NULL CHECK(scope IN ('global','project')),
+    project_id TEXT REFERENCES projects(id),
+    source TEXT NOT NULL,
+    status TEXT NOT NULL CHECK(status IN ('installed','removed','failed')),
+    safe_error TEXT,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    CHECK((scope = 'global' AND project_id IS NULL) OR (scope = 'project' AND project_id IS NOT NULL))
+  );
+  CREATE UNIQUE INDEX harness_resources_global_unique_idx
+    ON harness_resources(harness_id, source) WHERE scope = 'global';
+  CREATE UNIQUE INDEX harness_resources_project_unique_idx
+    ON harness_resources(harness_id, project_id, source) WHERE scope = 'project';
+  CREATE INDEX harness_resources_scope_idx ON harness_resources(harness_id, scope, project_id, status);
   `,
 ] as const;
 
@@ -224,6 +253,178 @@ export class HarnessInstallationRepository {
   }
 }
 
+type ResourceRow = {
+  id: string;
+  harness_id: string;
+  type: string;
+  scope: string;
+  project_id: string | null;
+  source: string;
+  status: string;
+  safe_error: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+export class ResourceRepository {
+  public constructor(private readonly database: SqliteDatabase) {}
+
+  public saveInstalled(input: {
+    harnessId: string;
+    type: ResourceType;
+    scope: ResourceScope;
+    projectId: string | null;
+    source: string;
+  }): HarnessResource {
+    const existing = this.findByIdentity(input.harnessId, input.scope, input.projectId, input.source);
+    const now = new Date().toISOString();
+    if (existing !== undefined) {
+      this.database
+        .prepare(
+          `UPDATE harness_resources
+           SET type = ?, status = 'installed', safe_error = NULL, updated_at = ?
+           WHERE id = ?`,
+        )
+        .run(input.type, now, existing.id);
+      return this.requireById(existing.id);
+    }
+    this.database
+      .prepare(
+        `INSERT INTO harness_resources
+         (id, harness_id, type, scope, project_id, source, status, safe_error, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, 'installed', NULL, ?, ?)`,
+      )
+      .run(randomUUID(), input.harnessId, input.type, input.scope, input.projectId, input.source, now, now);
+    return this.requireByIdentity(input.harnessId, input.scope, input.projectId, input.source);
+  }
+
+  public markFailed(input: {
+    harnessId: string;
+    type: ResourceType;
+    scope: ResourceScope;
+    projectId: string | null;
+    source: string;
+    safeError: string;
+  }): HarnessResource {
+    const existing = this.findByIdentity(input.harnessId, input.scope, input.projectId, input.source);
+    const now = new Date().toISOString();
+    if (existing !== undefined) {
+      this.database
+        .prepare(
+          `UPDATE harness_resources
+           SET type = ?, status = 'failed', safe_error = ?, updated_at = ?
+           WHERE id = ?`,
+        )
+        .run(input.type, input.safeError, now, existing.id);
+      return this.requireById(existing.id);
+    }
+    this.database
+      .prepare(
+        `INSERT INTO harness_resources
+         (id, harness_id, type, scope, project_id, source, status, safe_error, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, 'failed', ?, ?, ?)`,
+      )
+      .run(
+        randomUUID(),
+        input.harnessId,
+        input.type,
+        input.scope,
+        input.projectId,
+        input.source,
+        input.safeError,
+        now,
+        now,
+      );
+    return this.requireByIdentity(input.harnessId, input.scope, input.projectId, input.source);
+  }
+
+  public list(input: {
+    harnessId: string;
+    scope?: ResourceScope;
+    projectId?: string | null;
+  }): HarnessResource[] {
+    if (input.scope !== undefined && input.projectId !== undefined) {
+      return (
+        this.database
+          .prepare(
+            `SELECT * FROM harness_resources
+           WHERE harness_id = ? AND scope = ? AND project_id IS ?
+           ORDER BY scope, source`,
+          )
+          .all(input.harnessId, input.scope, input.projectId) as ResourceRow[]
+      ).map(mapResource);
+    }
+    if (input.scope !== undefined) {
+      return (
+        this.database
+          .prepare(
+            `SELECT * FROM harness_resources
+           WHERE harness_id = ? AND scope = ?
+           ORDER BY scope, source`,
+          )
+          .all(input.harnessId, input.scope) as ResourceRow[]
+      ).map(mapResource);
+    }
+    return (
+      this.database
+        .prepare(
+          `SELECT * FROM harness_resources
+         WHERE harness_id = ?
+         ORDER BY scope, source`,
+        )
+        .all(input.harnessId) as ResourceRow[]
+    ).map(mapResource);
+  }
+
+  public findById(id: string): HarnessResource | undefined {
+    const row = this.database.prepare("SELECT * FROM harness_resources WHERE id = ?").get(id) as
+      ResourceRow | undefined;
+    return row === undefined ? undefined : mapResource(row);
+  }
+
+  public findByIdentity(
+    harnessId: string,
+    scope: ResourceScope,
+    projectId: string | null,
+    source: string,
+  ): HarnessResource | undefined {
+    const row = this.database
+      .prepare(
+        `SELECT * FROM harness_resources
+         WHERE harness_id = ? AND scope = ? AND project_id IS ? AND source = ?`,
+      )
+      .get(harnessId, scope, projectId, source) as ResourceRow | undefined;
+    return row === undefined ? undefined : mapResource(row);
+  }
+
+  public markRemoved(id: string): HarnessResource {
+    const now = new Date().toISOString();
+    this.database
+      .prepare(
+        "UPDATE harness_resources SET status = 'removed', safe_error = NULL, updated_at = ? WHERE id = ?",
+      )
+      .run(now, id);
+    return this.requireById(id);
+  }
+
+  private requireById(id: string): HarnessResource {
+    const resource = this.findById(id);
+    if (resource === undefined) throw new Error(`Resource not found: ${id}`);
+    return resource;
+  }
+
+  private requireByIdentity(
+    harnessId: string,
+    scope: ResourceScope,
+    projectId: string | null,
+    source: string,
+  ): HarnessResource {
+    const resource = this.findByIdentity(harnessId, scope, projectId, source);
+    if (resource === undefined) throw new Error("Resource was not persisted");
+    return resource;
+  }
+}
+
 export class SessionRepository {
   public constructor(private readonly database: SqliteDatabase) {}
 
@@ -276,6 +477,7 @@ export class Database {
   public readonly projects: ProjectRepository;
   public readonly sessions: SessionRepository;
   public readonly installations: HarnessInstallationRepository;
+  public readonly resources: ResourceRepository;
 
   private constructor(private readonly sqlite: SqliteDatabase) {
     this.jobs = new JobRepository(sqlite);
@@ -283,6 +485,7 @@ export class Database {
     this.projects = new ProjectRepository(sqlite);
     this.sessions = new SessionRepository(sqlite);
     this.installations = new HarnessInstallationRepository(sqlite);
+    this.resources = new ResourceRepository(sqlite);
   }
 
   public static open(databasePath: string): Database {
@@ -410,6 +613,28 @@ function nullableDatabaseString(value: unknown): string | null {
   if (value === null) return null;
   if (typeof value !== "string") throw new Error("Database contains an invalid string value");
   return value;
+}
+
+function mapResource(row: ResourceRow): HarnessResource {
+  if (!resourceTypes.includes(row.type as ResourceType))
+    throw new Error("Database contains invalid resource type");
+  if (!resourceScopes.includes(row.scope as ResourceScope))
+    throw new Error("Database contains invalid resource scope");
+  if (!resourceStatuses.includes(row.status as ResourceStatus)) {
+    throw new Error("Database contains invalid resource status");
+  }
+  return {
+    id: row.id,
+    harnessId: row.harness_id,
+    type: row.type as ResourceType,
+    scope: row.scope as ResourceScope,
+    projectId: row.project_id,
+    source: row.source,
+    status: row.status as ResourceStatus,
+    safeError: row.safe_error,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  };
 }
 
 function mapJob(row: JobRow): Job {

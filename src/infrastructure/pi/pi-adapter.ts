@@ -314,6 +314,44 @@ export class PiAdapter {
     await this.sessions.get(projectId)?.stop();
   }
 
+  public async installPackageResource(input: {
+    scope: "global" | "project";
+    cwd: string;
+    source: string;
+  }): Promise<void> {
+    await this.runPiPackageCommand(
+      ["install", ...(input.scope === "project" ? ["-l"] : []), input.source],
+      input.cwd,
+    );
+  }
+
+  public async removePackageResource(input: {
+    scope: "global" | "project";
+    cwd: string;
+    source: string;
+  }): Promise<void> {
+    await this.runPiPackageCommand(
+      ["remove", ...(input.scope === "project" ? ["-l"] : []), input.source],
+      input.cwd,
+    );
+  }
+
+  private async runPiPackageCommand(arguments_: readonly string[], cwd: string): Promise<void> {
+    const executable = await this.resolveExecutable();
+    await executeFile(executable.command, [...executable.arguments, ...arguments_], {
+      cwd: await fs.realpath(cwd),
+      shell: false,
+      windowsHide: true,
+      timeout: 5 * 60_000,
+      maxBuffer: 1024 * 1024,
+      env: {
+        ...process.env,
+        GIT_TERMINAL_PROMPT: "0",
+        GIT_SSH_COMMAND: "ssh -o BatchMode=yes -o StrictHostKeyChecking=yes",
+      },
+    });
+  }
+
   public async dispose(): Promise<void> {
     await Promise.allSettled(this.starting.values());
     await Promise.all([...this.sessions.values()].map(async (session) => session.close()));

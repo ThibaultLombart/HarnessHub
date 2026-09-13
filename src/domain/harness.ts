@@ -1,3 +1,5 @@
+import type { ResourceScope } from "./resource.js";
+
 export class SessionBusyError extends Error {
   public constructor() {
     super("This project already has an active prompt");
@@ -45,5 +47,7 @@ export type HarnessAdapter = {
   }): Promise<HarnessSession>;
   getSession(projectId: string): HarnessSession | undefined;
   stopSession(projectId: string): Promise<void>;
+  installPackageResource?(input: { scope: ResourceScope; cwd: string; source: string }): Promise<void>;
+  removePackageResource?(input: { scope: ResourceScope; cwd: string; source: string }): Promise<void>;
   dispose(): Promise<void>;
 };

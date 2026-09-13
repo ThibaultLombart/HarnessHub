@@ -43,6 +43,8 @@ describe("HarnessHubApplication", () => {
       projectChannelMatches: vi.fn(async () => true),
     };
     const detect = vi.fn(async () => ({ installed: true, version: "test" }));
+    const installPackageResource = vi.fn(async () => undefined);
+    const removePackageResource = vi.fn(async () => undefined);
     const adapter: HarnessAdapter = {
       getCapabilities: () => new Set(),
       detect,
@@ -53,6 +55,8 @@ describe("HarnessHubApplication", () => {
       },
       getSession: () => undefined,
       stopSession: async () => undefined,
+      installPackageResource,
+      removePackageResource,
       dispose: async () => undefined,
     };
     const first = Database.open(databasePath);
@@ -74,12 +78,27 @@ describe("HarnessHubApplication", () => {
       { ...actor, channelId: "management" },
       { name: "Persistent Demo" },
     );
+    const resource = await app.installResource(
+      { ...actor, channelId: project.channelId },
+      { scope: "project", source: "npm:demo-pi-pack" },
+    );
+    expect(installPackageResource).toHaveBeenCalledWith({
+      scope: "project",
+      cwd: path.join(workspaceRoot, "persistent-demo"),
+      source: "npm:demo-pi-pack",
+    });
     first.close();
 
     const second = Database.open(databasePath);
     expect(second.workspaces.findByGuildId(config.discordGuildId)?.managementChannelId).toBe("management");
     expect(second.projects.findByChannelId(project.channelId)?.slug).toBe("persistent-demo");
     expect(fs.existsSync(path.join(workspaceRoot, "persistent-demo", ".git"))).toBe(true);
+    expect(second.resources.findById(resource.id)).toMatchObject({
+      scope: "project",
+      projectId: project.id,
+      source: "npm:demo-pi-pack",
+      status: "installed",
+    });
     second.close();
   });
 });

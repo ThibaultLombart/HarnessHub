@@ -3,6 +3,8 @@ import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { Database } from "../src/infrastructure/database.js";
+import type { Project } from "../src/domain/project.js";
+import type { GuildWorkspace } from "../src/domain/workspace.js";
 
 const temporaryDirectories: string[] = [];
 
@@ -30,6 +32,55 @@ describe("Database", () => {
     expect(second.schemaVersion).toBeGreaterThan(0);
     expect(second.jobs.findById(job.id)).toMatchObject({ status: "running", type: "bootstrap" });
     second.close();
+  });
+
+  it("persists global and project resources independently", () => {
+    const database = Database.open(temporaryDatabasePath());
+    const workspace: GuildWorkspace = {
+      id: "workspace",
+      discordGuildId: "guild",
+      categoryId: "category",
+      managementChannelId: "management",
+      workspaceRoot: "/srv/workspaces",
+      createdAt: new Date().toISOString(),
+    };
+    const project: Project = {
+      id: "project",
+      workspaceId: workspace.id,
+      name: "Demo",
+      slug: "demo",
+      channelId: "channel",
+      path: "/srv/workspaces/demo",
+      harnessId: "pi",
+      gitRemote: null,
+      createdAt: new Date().toISOString(),
+      archivedAt: null,
+    };
+    database.workspaces.save(workspace);
+    database.projects.save(project);
+
+    const global = database.resources.saveInstalled({
+      harnessId: "pi",
+      type: "package",
+      scope: "global",
+      projectId: null,
+      source: "npm:demo",
+    });
+    const local = database.resources.saveInstalled({
+      harnessId: "pi",
+      type: "package",
+      scope: "project",
+      projectId: project.id,
+      source: "npm:demo",
+    });
+
+    expect(global.id).not.toBe(local.id);
+    expect(database.resources.list({ harnessId: "pi", scope: "global" })).toHaveLength(1);
+    expect(
+      database.resources.list({ harnessId: "pi", scope: "project", projectId: project.id }),
+    ).toHaveLength(1);
+    expect(database.resources.markRemoved(local.id).status).toBe("removed");
+    database.close();
   });
 
   it("reconciles interrupted jobs without touching terminal jobs", () => {

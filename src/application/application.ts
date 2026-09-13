@@ -5,9 +5,11 @@ import { promisify } from "node:util";
 import type { Config } from "../config.js";
 import type { HarnessAdapter, HarnessEvent } from "../domain/harness.js";
 import type { Project } from "../domain/project.js";
+import type { HarnessResource, ResourceScope } from "../domain/resource.js";
 import type { GuildWorkspace } from "../domain/workspace.js";
 import { CreateProject } from "./create-project.js";
 import { HarnessHub, UnmappedChannelError, type Actor } from "./harness-hub.js";
+import { ManageResources, type ResourceHarnessPort } from "./manage-resources.js";
 import { SetupWorkspace } from "./setup-workspace.js";
 import type { Database } from "../infrastructure/database.js";
 import type { ProjectFiles } from "../infrastructure/project-files.js";
@@ -40,6 +42,7 @@ export class HarnessHubApplication {
   private readonly harness: HarnessHub;
   private readonly setupWorkspace: SetupWorkspace;
   private readonly createProjectUseCase: CreateProject;
+  private readonly manageResources: ManageResources;
 
   public constructor(
     private readonly config: Config,
@@ -55,6 +58,7 @@ export class HarnessHubApplication {
     );
     this.setupWorkspace = new SetupWorkspace(database.workspaces, discord);
     this.createProjectUseCase = new CreateProject(database.projects, files, discord);
+    this.manageResources = new ManageResources(database.resources, resourceHarnessPort(adapter));
     this.discord = discord;
   }
 
@@ -76,6 +80,61 @@ export class HarnessHubApplication {
     if (actor.channelId !== workspace.managementChannelId) throw new ManagementChannelRequiredError();
     return this.runJob("create-project", async () =>
       this.createProjectUseCase.execute({ workspace, ...input }),
+    );
+  }
+
+  public async installResource(
+    actor: Actor & { channelId: string },
+    input: { scope: ResourceScope; source: string },
+  ): Promise<HarnessResource> {
+    this.harness.authorize(actor);
+    const workspace = this.requireWorkspace(actor.guildId);
+    const project = input.scope === "project" ? this.projectForChannel(actor) : null;
+    if (input.scope === "global" && actor.channelId !== workspace.managementChannelId) {
+      throw new ManagementChannelRequiredError();
+    }
+    if (project !== null && !(await this.projectResourcesMatch(project))) throw new ProjectDegradedError();
+    return this.runJob("install-resource", async () =>
+      this.manageResources.install({
+        scope: input.scope,
+        project,
+        workspaceRoot: this.config.workspaceRoot,
+        source: input.source,
+      }),
+    );
+  }
+
+  public listResources(actor: Actor & { channelId: string }, scope?: ResourceScope): HarnessResource[] {
+    this.harness.authorize(actor);
+    const workspace = this.requireWorkspace(actor.guildId);
+    if (actor.channelId === workspace.managementChannelId) {
+      return scope === undefined ? this.manageResources.list({}) : this.manageResources.list({ scope });
+    }
+    if (scope === "global") return this.manageResources.list({ scope: "global" });
+    const project = this.projectForChannel(actor);
+    return scope === undefined
+      ? this.manageResources.list({ project })
+      : this.manageResources.list({ scope, project });
+  }
+
+  public async removeResource(
+    actor: Actor & { channelId: string },
+    input: { id: string; scope: ResourceScope },
+  ): Promise<HarnessResource> {
+    this.harness.authorize(actor);
+    const workspace = this.requireWorkspace(actor.guildId);
+    const project = input.scope === "project" ? this.projectForChannel(actor) : null;
+    if (input.scope === "global" && actor.channelId !== workspace.managementChannelId) {
+      throw new ManagementChannelRequiredError();
+    }
+    if (project !== null && !(await this.projectResourcesMatch(project))) throw new ProjectDegradedError();
+    return this.runJob("remove-resource", async () =>
+      this.manageResources.remove({
+        id: input.id,
+        scope: input.scope,
+        project,
+        workspaceRoot: this.config.workspaceRoot,
+      }),
     );
   }
 
@@ -229,8 +288,19 @@ async function gitStatus(cwd: string): Promise<string> {
   }
 }
 
+function resourceHarnessPort(adapter: HarnessAdapter): ResourceHarnessPort {
+  if (adapter.installPackageResource === undefined || adapter.removePackageResource === undefined) {
+    throw new Error("The configured harness does not support package resource management");
+  }
+  return {
+    installPackageResource: async (input) => adapter.installPackageResource?.(input),
+    removePackageResource: async (input) => adapter.removePackageResource?.(input),
+  };
+}
+
 function safeJobError(error: unknown): string {
   if (error instanceof ManagementChannelRequiredError || error instanceof UnmappedChannelError)
     return error.message;
+  if (error instanceof Error && error.name === "InvalidResourceInputError") return error.message;
   return "Operation failed; inspect the redacted service logs";
 }

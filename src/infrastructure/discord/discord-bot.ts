@@ -15,6 +15,7 @@ import {
 import type { Logger } from "pino";
 import type { HarnessHubApplication } from "../../application/application.js";
 import type { HarnessEvent } from "../../domain/harness.js";
+import type { HarnessResource, ResourceScope } from "../../domain/resource.js";
 import { SessionProgress } from "../../domain/session-progress.js";
 
 const progressUpdateIntervalMs = 15_000;
@@ -48,6 +49,54 @@ const commands = [
       command.setName("auth").setDescription("Check native Pi provider authentication"),
     )
     .addSubcommand((command) => command.setName("install").setDescription("Explicitly install Pi")),
+  new SlashCommandBuilder()
+    .setName("resource")
+    .setDescription("Manage Pi packages, skills, and harness resources")
+    .addSubcommand((command) =>
+      command
+        .setName("add")
+        .setDescription("Install a Pi package globally or for this project")
+        .addStringOption((option) =>
+          option
+            .setName("scope")
+            .setDescription("Install globally or for the current project")
+            .setRequired(true)
+            .addChoices({ name: "global", value: "global" }, { name: "project", value: "project" }),
+        )
+        .addStringOption((option) =>
+          option
+            .setName("source")
+            .setDescription("Package source: npm:, git:, https:, or ssh:")
+            .setRequired(true)
+            .setMaxLength(2048),
+        ),
+    )
+    .addSubcommand((command) =>
+      command
+        .setName("list")
+        .setDescription("List installed HarnessHub resources")
+        .addStringOption((option) =>
+          option
+            .setName("scope")
+            .setDescription("Optional scope filter")
+            .addChoices({ name: "global", value: "global" }, { name: "project", value: "project" }),
+        ),
+    )
+    .addSubcommand((command) =>
+      command
+        .setName("remove")
+        .setDescription("Remove a managed Pi package by resource ID")
+        .addStringOption((option) =>
+          option
+            .setName("scope")
+            .setDescription("Resource scope")
+            .setRequired(true)
+            .addChoices({ name: "global", value: "global" }, { name: "project", value: "project" }),
+        )
+        .addStringOption((option) =>
+          option.setName("id").setDescription("Resource ID from /resource list").setRequired(true),
+        ),
+    ),
   new SlashCommandBuilder()
     .setName("session")
     .setDescription("Manage the current project session")
@@ -158,6 +207,33 @@ export class DiscordBot {
         } else {
           await this.application.installHarness({ ...actor, channelId: interaction.channelId });
           await interaction.editReply("Pi installation completed.");
+        }
+      } else if (interaction.commandName === "resource") {
+        const subcommand = interaction.options.getSubcommand();
+        if (subcommand === "add") {
+          const resource = await this.application.installResource(
+            { ...actor, channelId: interaction.channelId },
+            {
+              scope: resourceScope(interaction.options.getString("scope", true)),
+              source: interaction.options.getString("source", true),
+            },
+          );
+          await interaction.editReply(`Resource installed: ${formatResource(resource)}.`);
+        } else if (subcommand === "remove") {
+          const resource = await this.application.removeResource(
+            { ...actor, channelId: interaction.channelId },
+            {
+              scope: resourceScope(interaction.options.getString("scope", true)),
+              id: interaction.options.getString("id", true),
+            },
+          );
+          await interaction.editReply(`Resource removed: ${formatResource(resource)}.`);
+        } else {
+          const resources = this.application.listResources(
+            { ...actor, channelId: interaction.channelId },
+            optionalResourceScope(interaction.options.getString("scope")),
+          );
+          await interaction.editReply(formatResources(resources));
         }
       } else if (interaction.commandName === "session") {
         const project = this.application.projectForChannel({ ...actor, channelId: interaction.channelId });
@@ -271,6 +347,38 @@ function actorFrom(guildId: string | null, userId: string): { guildId: string; u
   return { guildId: guildId ?? "", userId };
 }
 
+function resourceScope(value: string): ResourceScope {
+  if (value === "global" || value === "project") return value;
+  throw new Error("Invalid resource scope");
+}
+
+function optionalResourceScope(value: string | null): ResourceScope | undefined {
+  return value === null ? undefined : resourceScope(value);
+}
+
+function formatResources(resources: readonly HarnessResource[], maximumLength = 1900): string {
+  const visible = resources.filter((resource) => resource.status !== "removed");
+  if (visible.length === 0) return "No managed resources found.";
+  const lines: string[] = [];
+  for (const resource of visible) {
+    const line = formatResource(resource);
+    const next = [...lines, line].join("\n");
+    if (next.length > maximumLength) {
+      lines.push(`…and ${String(visible.length - lines.length)} more resource(s).`);
+      break;
+    }
+    lines.push(line);
+  }
+  return lines.join("\n");
+}
+
+function formatResource(resource: HarnessResource): string {
+  const id = resource.id.slice(0, 8);
+  const project = resource.scope === "project" ? ` project:${resource.projectId ?? "unknown"}` : "";
+  const error = resource.safeError === null ? "" : ` — ${resource.safeError}`;
+  return `${id} ${resource.scope}${project} ${resource.type} ${resource.source} [${resource.status}]${error}`;
+}
+
 export function splitDiscordMessage(message: string, maximum = 1900): string[] {
   if (message.length <= maximum) return [message];
   const chunks: string[] = [];
@@ -298,6 +406,10 @@ export function safeDiscordError(error: unknown): string {
       "ProjectAlreadyExistsError",
       "ProjectDegradedError",
       "InvalidProjectInputError",
+      "InvalidResourceInputError",
+      "ResourceNotFoundError",
+      "ResourceProjectRequiredError",
+      "ResourceScopeMismatchError",
       "SessionBusyError",
       "SessionStoppedError",
       "WorkspaceDegradedError",
