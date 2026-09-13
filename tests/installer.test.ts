@@ -27,4 +27,18 @@ describe("Linux installer", () => {
     expect(source).toContain("--ignore-scripts");
     expect(source).not.toContain("npm install -g");
   });
+
+  it("includes both installation documents in the installed application", () => {
+    const source = fs.readFileSync(installer, "utf8");
+    expect(source).toContain('"${SOURCE_DIR}/docs/INSTALLATION.md"');
+    expect(source).toContain('"${SOURCE_DIR}/docs/PROXMOX_VM_GUIDE.md"');
+  });
+
+  it("starts authentication from stable state without inheriting a parent Pi session", () => {
+    const source = fs.readFileSync(installer, "utf8");
+    expect(source).toContain(`--chdir="\${STATE_DIR}"`);
+    expect(source).toContain("-u PI_SESSION_FILE");
+    expect(source).toContain("--no-session");
+    expect(source).toContain("--no-approve");
+  });
 });

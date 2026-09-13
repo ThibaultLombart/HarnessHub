@@ -197,7 +197,10 @@ STAGING_DIR="$(mktemp -d "/opt/harnesshub.install.XXXXXX")"
 install -d -o root -g root -m 0755 "${STAGING_DIR}/dist" "${STAGING_DIR}/docs" "${STAGING_DIR}/deploy"
 cp -a -- "${SOURCE_DIR}/dist/." "${STAGING_DIR}/dist/"
 cp -a -- "${SOURCE_DIR}/package.json" "${SOURCE_DIR}/package-lock.json" "${SOURCE_DIR}/README.md" "${STAGING_DIR}/"
-cp -a -- "${SOURCE_DIR}/docs/INSTALLATION.md" "${STAGING_DIR}/docs/"
+cp -a -- \
+  "${SOURCE_DIR}/docs/INSTALLATION.md" \
+  "${SOURCE_DIR}/docs/PROXMOX_VM_GUIDE.md" \
+  "${STAGING_DIR}/docs/"
 cp -a -- "${SOURCE_DIR}/deploy/harnesshub.service" "${STAGING_DIR}/deploy/"
 "${NPM_BIN}" --prefix "${STAGING_DIR}" ci --omit=dev --ignore-scripts
 
@@ -243,9 +246,19 @@ if [[ "${NO_PI_LOGIN}" == false && -t 0 ]]; then
   if [[ ! "${login_choice}" =~ ^[Nn]$ ]]; then
     printf 'In Pi, run /login and exit when authentication is complete.\n'
     runuser -u "${APP_USER}" -- env \
+      --chdir="${STATE_DIR}" \
+      -u AI_AGENT \
+      -u PI_CODING_AGENT \
+      -u PI_SESSION_ID \
+      -u PI_SESSION_FILE \
+      -u PI_PROVIDER \
+      -u PI_MODEL \
+      -u PI_REASONING_LEVEL \
       HOME="${STATE_DIR}" \
       PI_CODING_AGENT_DIR="${STATE_DIR}/pi-agent" \
-      "${STATE_DIR}/tools/node_modules/.bin/pi"
+      "${STATE_DIR}/tools/node_modules/.bin/pi" \
+      --no-session \
+      --no-approve
   fi
 fi
 

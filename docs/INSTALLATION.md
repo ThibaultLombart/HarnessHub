@@ -2,6 +2,8 @@
 
 The MVP supports one Linux host, one Discord guild, and one administrator. HarnessHub itself never runs as root.
 
+For a start-to-finish walkthrough covering Proxmox, Debian, Node.js, Discord, Pi, the first task, restart verification, and backups, follow [`PROXMOX_VM_GUIDE.md`](PROXMOX_VM_GUIDE.md). This page is the concise installation how-to and reference.
+
 ## Automated installation
 
 From a trusted HarnessHub checkout, run:
@@ -62,7 +64,14 @@ Install the pinned Pi release without global npm permissions, then authenticate 
 
 ```bash
 sudo -u harnesshub -H npm install --prefix /var/lib/harnesshub/tools --ignore-scripts --no-audit --no-fund @earendil-works/pi-coding-agent@0.85.1
-sudo -u harnesshub -H env PI_CODING_AGENT_DIR=/var/lib/harnesshub/pi-agent /var/lib/harnesshub/tools/node_modules/.bin/pi
+sudo -u harnesshub env \
+  --chdir=/var/lib/harnesshub \
+  -u AI_AGENT -u PI_CODING_AGENT -u PI_SESSION_ID -u PI_SESSION_FILE \
+  -u PI_PROVIDER -u PI_MODEL -u PI_REASONING_LEVEL \
+  HOME=/var/lib/harnesshub \
+  PI_CODING_AGENT_DIR=/var/lib/harnesshub/pi-agent \
+  /var/lib/harnesshub/tools/node_modules/.bin/pi \
+  --no-session --no-approve
 # Run /login, select the provider, complete its native flow, then quit.
 ```
 

@@ -34,7 +34,7 @@ From a trusted checkout on a Linux/systemd host:
 sudo ./scripts/install.sh
 ```
 
-The interactive installer builds, validates, configures, installs Pi locally, and starts HarnessHub. Creating the Discord application and approving the native model-provider login remain explicit human trust steps. See [`docs/INSTALLATION.md`](docs/INSTALLATION.md) for prerequisites, options, and the manual procedure. Real credentials belong in `/etc/harnesshub/harnesshub.env`, never in this repository or Discord.
+The interactive installer builds, validates, configures, installs Pi locally, and starts HarnessHub. Creating the Discord application and approving the native model-provider login remain explicit human trust steps. For a complete empty-VM walkthrough, follow [`docs/PROXMOX_VM_GUIDE.md`](docs/PROXMOX_VM_GUIDE.md). See [`docs/INSTALLATION.md`](docs/INSTALLATION.md) for concise prerequisites, options, and the manual procedure. Real credentials belong in `/etc/harnesshub/harnesshub.env`, never in this repository or Discord.
 
 The principal Discord flow is:
 
@@ -48,6 +48,8 @@ The principal Discord flow is:
 
 - `AGENTS.md` — development and validation contract
 - `PROJECT.md` — product and architecture source of truth
+- `docs/PROXMOX_VM_GUIDE.md` — complete Proxmox VM installation tutorial
+- `docs/INSTALLATION.md` — concise installer and manual-installation guide
 - `docs/ROADMAP.md` — vertical milestones
 - `docs/SECURITY.md` — security invariants
 - `docs/DECISIONS.md` — durable decisions
