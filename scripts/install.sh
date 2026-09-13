@@ -212,6 +212,7 @@ fi
 mv -- "${STAGING_DIR}" "${APP_DIR}"
 STAGING_DIR=""
 chown -R root:root "${APP_DIR}"
+chmod 0755 "${APP_DIR}"
 
 runuser -u "${APP_USER}" -- env \
   HOME="${STATE_DIR}" \

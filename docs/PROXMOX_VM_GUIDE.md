@@ -312,7 +312,20 @@ Avant un changement important, crée également un snapshot Proxmox. Un snapshot
 
 ## Dépannage
 
-### Le service ne démarre pas
+### Le service échoue avec `status=200/CHDIR`
+
+Une ancienne version de l’installateur a pu créer `/opt/harnesshub` sans droit de traversée pour le compte système. Répare uniquement le mode du répertoire racine, puis redémarre :
+
+```bash
+sudo systemctl stop harnesshub
+sudo chown root:root /opt/harnesshub
+sudo chmod 0755 /opt/harnesshub
+sudo systemctl reset-failed harnesshub
+sudo systemctl start harnesshub
+sudo systemctl status harnesshub --no-pager
+```
+
+### Le service ne démarre pas pour une autre raison
 
 ```bash
 sudo systemctl status harnesshub

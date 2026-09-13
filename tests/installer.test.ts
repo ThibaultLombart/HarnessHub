@@ -28,6 +28,11 @@ describe("Linux installer", () => {
     expect(source).not.toContain("npm install -g");
   });
 
+  it("makes the root-owned application directory traversable by the service account", () => {
+    const source = fs.readFileSync(installer, "utf8");
+    expect(source).toContain('chmod 0755 "${APP_DIR}"');
+  });
+
   it("includes both installation documents in the installed application", () => {
     const source = fs.readFileSync(installer, "utf8");
     expect(source).toContain('"${SOURCE_DIR}/docs/INSTALLATION.md"');
