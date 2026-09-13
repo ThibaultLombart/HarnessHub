@@ -98,6 +98,7 @@ describe("HarnessHubApplication", () => {
     await app.setProjectModel({ ...actor, channelId: project.channelId }, { model: "fake/model" });
     await app.prompt({ ...actor, channelId: project.channelId, content: "work" }, () => undefined);
     expect(startSession).toHaveBeenCalledWith(expect.objectContaining({ modelPattern: "fake/model" }));
+    await expect(app.systemStatus({ ...actor, channelId: "management" })).resolves.toContain("Version:");
     expect(app.mcpStatus({ ...actor, channelId: "management" })).toContain("Pi: no native MCP");
     expect(app.backupStatus({ ...actor, channelId: "management" })).toContain(
       "Restore must replace both state",

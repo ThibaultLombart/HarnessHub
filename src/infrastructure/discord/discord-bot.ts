@@ -68,6 +68,12 @@ const commands = [
     )
     .addSubcommand((command) => command.setName("install").setDescription("Explicitly install Pi")),
   new SlashCommandBuilder()
+    .setName("system")
+    .setDescription("Inspect HarnessHub runtime status")
+    .addSubcommand((command) =>
+      command.setName("status").setDescription("Show version, health, permissions, and update guidance"),
+    ),
+  new SlashCommandBuilder()
     .setName("mcp")
     .setDescription("Inspect MCP support for the configured harness")
     .addSubcommand((command) =>
@@ -332,6 +338,10 @@ export class DiscordBot {
           await this.application.installHarness({ ...actor, channelId: interaction.channelId });
           await interaction.editReply("Pi installation completed.");
         }
+      } else if (interaction.commandName === "system") {
+        await interaction.editReply(
+          await this.application.systemStatus({ ...actor, channelId: interaction.channelId }),
+        );
       } else if (interaction.commandName === "mcp") {
         await interaction.editReply(
           this.application.mcpStatus({ ...actor, channelId: interaction.channelId }),

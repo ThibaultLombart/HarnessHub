@@ -1,5 +1,6 @@
 import fs from "node:fs/promises";
 import path from "node:path";
+import packageJson from "../../package.json" with { type: "json" };
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import type { Config } from "../config.js";
@@ -18,6 +19,7 @@ import { GitOperations, type GitProjectStatus } from "./git-operations.js";
 import { HarnessHub, UnmappedChannelError, type Actor } from "./harness-hub.js";
 import { ManageResources, type ResourceHarnessPort } from "./manage-resources.js";
 import { SetupWorkspace } from "./setup-workspace.js";
+import { checkHealth } from "../health.js";
 import type { Database, Job } from "../infrastructure/database.js";
 import type { ProjectFiles } from "../infrastructure/project-files.js";
 
@@ -148,6 +150,20 @@ export class HarnessHubApplication {
       },
       project.id,
     );
+  }
+
+  public async systemStatus(actor: Actor & { channelId: string }): Promise<string> {
+    this.requireManagementChannel(actor);
+    const health = await checkHealth(this.database, this.config.workspaceRoot);
+    return [
+      "HarnessHub system status",
+      `Version: ${packageJson.version}`,
+      `Health: ${health.status}`,
+      `Database schema: ${String(this.database.schemaVersion)}`,
+      `Workspace root: ${this.config.workspaceRoot}`,
+      "Permissions: single configured administrator; project-user roles are not enabled yet.",
+      "Updates: run git pull + sudo ./scripts/install.sh --no-pi-login from a trusted checkout.",
+    ].join("\n");
   }
 
   public mcpStatus(actor: Actor & { channelId: string }): string {
