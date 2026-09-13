@@ -27,4 +27,30 @@ describe("Linux installer", () => {
     expect(source).toContain("--ignore-scripts");
     expect(source).not.toContain("npm install -g");
   });
+
+  it("makes all root-owned application artifacts readable by the service account", () => {
+    const source = fs.readFileSync(installer, "utf8");
+    expect(source).toContain('chmod -R u=rwX,go=rX "${APP_DIR}"');
+    expect(source).toContain('runuser -u "${APP_USER}" -- test -r "${APP_DIR}/dist/main.js"');
+  });
+
+  it("includes both installation documents in the installed application", () => {
+    const source = fs.readFileSync(installer, "utf8");
+    expect(source).toContain('"${SOURCE_DIR}/docs/INSTALLATION.md"');
+    expect(source).toContain('"${SOURCE_DIR}/docs/PROXMOX_VM_GUIDE.md"');
+  });
+
+  it("starts authentication from stable state without inheriting a parent Pi session", () => {
+    const source = fs.readFileSync(installer, "utf8");
+    expect(source).toContain(`--chdir="\${STATE_DIR}"`);
+    expect(source).toContain("-u PI_SESSION_FILE");
+    expect(source).toContain("--no-session");
+    expect(source).toContain("--no-approve");
+  });
+
+  it("does not invalidate a completed installation when optional Pi login fails", () => {
+    const source = fs.readFileSync(installer, "utf8");
+    expect(source).toContain("if ! open_pi_login; then");
+    expect(source).toContain("Pi login did not complete, but HarnessHub remains installed");
+  });
 });

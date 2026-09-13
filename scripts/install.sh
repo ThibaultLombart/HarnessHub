@@ -197,7 +197,10 @@ STAGING_DIR="$(mktemp -d "/opt/harnesshub.install.XXXXXX")"
 install -d -o root -g root -m 0755 "${STAGING_DIR}/dist" "${STAGING_DIR}/docs" "${STAGING_DIR}/deploy"
 cp -a -- "${SOURCE_DIR}/dist/." "${STAGING_DIR}/dist/"
 cp -a -- "${SOURCE_DIR}/package.json" "${SOURCE_DIR}/package-lock.json" "${SOURCE_DIR}/README.md" "${STAGING_DIR}/"
-cp -a -- "${SOURCE_DIR}/docs/INSTALLATION.md" "${STAGING_DIR}/docs/"
+cp -a -- \
+  "${SOURCE_DIR}/docs/INSTALLATION.md" \
+  "${SOURCE_DIR}/docs/PROXMOX_VM_GUIDE.md" \
+  "${STAGING_DIR}/docs/"
 cp -a -- "${SOURCE_DIR}/deploy/harnesshub.service" "${STAGING_DIR}/deploy/"
 "${NPM_BIN}" --prefix "${STAGING_DIR}" ci --omit=dev --ignore-scripts
 
@@ -209,6 +212,11 @@ fi
 mv -- "${STAGING_DIR}" "${APP_DIR}"
 STAGING_DIR=""
 chown -R root:root "${APP_DIR}"
+chmod -R u=rwX,go=rX "${APP_DIR}"
+if ! runuser -u "${APP_USER}" -- test -r "${APP_DIR}/dist/main.js"; then
+  printf 'Installed entry point is not readable by %s: %s/dist/main.js\n' "${APP_USER}" "${APP_DIR}" >&2
+  exit 1
+fi
 
 runuser -u "${APP_USER}" -- env \
   HOME="${STATE_DIR}" \
@@ -237,15 +245,31 @@ else
   printf 'Service installation complete; start it later with: sudo systemctl enable --now harnesshub\n'
 fi
 
+open_pi_login() {
+  runuser -u "${APP_USER}" -- env \
+    --chdir="${STATE_DIR}" \
+    -u AI_AGENT \
+    -u PI_CODING_AGENT \
+    -u PI_SESSION_ID \
+    -u PI_SESSION_FILE \
+    -u PI_PROVIDER \
+    -u PI_MODEL \
+    -u PI_REASONING_LEVEL \
+    HOME="${STATE_DIR}" \
+    PI_CODING_AGENT_DIR="${STATE_DIR}/pi-agent" \
+    "${STATE_DIR}/tools/node_modules/.bin/pi" \
+    --no-session \
+    --no-approve
+}
+
 if [[ "${NO_PI_LOGIN}" == false && -t 0 ]]; then
   printf '\nPi is installed. Native provider login still requires your approval.\n'
   read -r -p "Open Pi login now? [Y/n]: " login_choice
   if [[ ! "${login_choice}" =~ ^[Nn]$ ]]; then
     printf 'In Pi, run /login and exit when authentication is complete.\n'
-    runuser -u "${APP_USER}" -- env \
-      HOME="${STATE_DIR}" \
-      PI_CODING_AGENT_DIR="${STATE_DIR}/pi-agent" \
-      "${STATE_DIR}/tools/node_modules/.bin/pi"
+    if ! open_pi_login; then
+      printf 'Pi login did not complete, but HarnessHub remains installed. Retry it using /opt/harnesshub/docs/INSTALLATION.md.\n' >&2
+    fi
   fi
 fi
 
