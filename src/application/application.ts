@@ -150,6 +150,16 @@ export class HarnessHubApplication {
     );
   }
 
+  public mcpStatus(actor: Actor & { channelId: string }): string {
+    this.harness.authorize(actor);
+    return [
+      "MCP status",
+      "Pi: no native MCP capability detected in the pinned Pi documentation.",
+      "Use /resource add to install Pi packages or extensions that provide equivalent integrations.",
+      "Future harnesses can expose native MCP as a declared capability without changing project state semantics.",
+    ].join("\n");
+  }
+
   public backupStatus(actor: Actor & { channelId: string }): string {
     this.requireManagementChannel(actor);
     return [
