@@ -68,6 +68,12 @@ const commands = [
     )
     .addSubcommand((command) => command.setName("install").setDescription("Explicitly install Pi")),
   new SlashCommandBuilder()
+    .setName("repair")
+    .setDescription("Diagnose degraded HarnessHub mappings")
+    .addSubcommand((command) =>
+      command.setName("status").setDescription("Show workspace or project repair status"),
+    ),
+  new SlashCommandBuilder()
     .setName("files")
     .setDescription("Upload files into the current project safely")
     .addSubcommand((command) =>
@@ -314,6 +320,10 @@ export class DiscordBot {
           await this.application.installHarness({ ...actor, channelId: interaction.channelId });
           await interaction.editReply("Pi installation completed.");
         }
+      } else if (interaction.commandName === "repair") {
+        await interaction.editReply(
+          await this.application.repairStatus({ ...actor, channelId: interaction.channelId }),
+        );
       } else if (interaction.commandName === "files") {
         const attachment = interaction.options.getAttachment("attachment", true);
         const response = await fetch(attachment.url);

@@ -150,6 +150,35 @@ export class HarnessHubApplication {
     );
   }
 
+  public async repairStatus(actor: Actor & { channelId: string }): Promise<string> {
+    this.harness.authorize(actor);
+    const workspace = this.requireWorkspace(actor.guildId);
+    if (actor.channelId === workspace.managementChannelId) {
+      return [
+        "HarnessHub repair status",
+        `Workspace: ${(await this.discord.workspaceExists(workspace)) ? "ok" : "degraded"}`,
+        `Workspace root: ${(await isDirectory(this.config.workspaceRoot)) ? "ok" : "missing"}`,
+      ].join("\n");
+    }
+    const project = this.projectForChannel(actor);
+    const directory = await isSafeProjectDirectory(project.path, this.config.workspaceRoot);
+    const channel = await this.discord.projectChannelMatches(
+      project.channelId,
+      project.slug,
+      workspace.categoryId,
+    );
+    const workspaceValid = await this.discord.workspaceExists(workspace);
+    return [
+      `HarnessHub repair status / ${project.slug}`,
+      `Workspace: ${workspaceValid ? "ok" : "degraded"}`,
+      `Project directory: ${directory ? "ok" : "missing or unsafe"}`,
+      `Discord channel: ${channel ? "ok" : "missing or remapped"}`,
+      directory && channel && workspaceValid
+        ? "No repair needed."
+        : "Explicit operator repair is required; HarnessHub will not recreate or remap automatically.",
+    ].join("\n");
+  }
+
   public async uploadProjectFile(
     actor: Actor & { channelId: string },
     input: { relativePath: string; content: Uint8Array },
@@ -427,6 +456,15 @@ export class HarnessHubApplication {
       this.database.jobs.transition(job.id, "failed", safeJobError(error));
       throw error;
     }
+  }
+}
+
+async function isDirectory(target: string): Promise<boolean> {
+  try {
+    return (await fs.lstat(target)).isDirectory();
+  } catch (error) {
+    if (error instanceof Error && "code" in error && error.code === "ENOENT") return false;
+    throw error;
   }
 }
 
