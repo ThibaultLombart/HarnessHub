@@ -37,7 +37,62 @@ describe("PiAdapter", () => {
       maxSessions: 2,
     });
 
-    await expect(adapter.getAuthStatus(cwd)).resolves.toEqual({ authenticated: true, providers: ["fake"] });
+    await expect(adapter.getAuthStatus(cwd)).resolves.toEqual({
+      authenticated: true,
+      providers: ["fake", "other"],
+    });
+    await adapter.dispose();
+  });
+
+  it("lists available models without exposing credentials", async () => {
+    const cwd = temporaryDirectory();
+    const adapter = new PiAdapter({
+      command: process.execPath,
+      commandArguments: [fixture],
+      sessionRoot: temporaryDirectory(),
+      maxSessions: 2,
+    });
+
+    await expect(adapter.listModels(cwd)).resolves.toEqual([
+      { provider: "fake", id: "model", label: "Fake Model" },
+      { provider: "other", id: "small", label: "" },
+    ]);
+    await adapter.dispose();
+  });
+
+  it("installs and removes package resources in the requested scope", async () => {
+    const cwd = temporaryDirectory();
+    const adapter = new PiAdapter({
+      command: process.execPath,
+      commandArguments: [fixture],
+      sessionRoot: temporaryDirectory(),
+      maxSessions: 2,
+    });
+
+    await expect(
+      adapter.installPackageResource({ scope: "project", cwd, source: "npm:demo" }),
+    ).resolves.toBeUndefined();
+    await expect(
+      adapter.removePackageResource({ scope: "global", cwd, source: "npm:demo" }),
+    ).resolves.toBeUndefined();
+    await adapter.dispose();
+  });
+
+  it("can switch the model of an active session", async () => {
+    const adapter = new PiAdapter({
+      command: process.execPath,
+      commandArguments: [fixture],
+      sessionRoot: temporaryDirectory(),
+      maxSessions: 2,
+    });
+    await adapter.startSession({
+      projectId: "model",
+      cwd: temporaryDirectory(),
+      name: "model",
+      onEvent: vi.fn(),
+    });
+
+    await expect(adapter.setSessionModel("model", "fake", "model")).resolves.toBeUndefined();
     await adapter.dispose();
   });
 

@@ -8,6 +8,9 @@ export type HarnessHubRepositories = {
     findByChannelId(channelId: string): Project | undefined;
     findById(id: string): Project | undefined;
   };
+  modelPreferences: {
+    findByProject(projectId: string): { provider: string; modelId: string } | undefined;
+  };
   sessions: {
     findLatestByProject(projectId: string): { externalSessionId: string | null; status: string } | undefined;
     recordStarted(projectId: string, harnessId: string, externalSessionId: string): void;
@@ -72,6 +75,7 @@ export class HarnessHub {
       projectId: project.id,
       cwd: project.path,
       name: project.slug,
+      ...modelPreferenceInput(this.repositories.modelPreferences.findByProject(project.id)),
       onEvent,
       ...(previous?.externalSessionId === null || previous?.externalSessionId === undefined
         ? {}
@@ -114,6 +118,7 @@ export class HarnessHub {
       projectId: project.id,
       cwd: project.path,
       name: project.slug,
+      ...modelPreferenceInput(this.repositories.modelPreferences.findByProject(project.id)),
       onEvent,
       ...(previous?.externalSessionId === null || previous?.externalSessionId === undefined
         ? {}
@@ -122,4 +127,10 @@ export class HarnessHub {
     this.repositories.sessions.recordStarted(project.id, "pi", session.externalSessionId);
     this.repositories.sessions.updateStatus(project.id, "idle");
   }
+}
+
+function modelPreferenceInput(preference: { provider: string; modelId: string } | undefined): {
+  modelPattern?: string;
+} {
+  return preference === undefined ? {} : { modelPattern: `${preference.provider}/${preference.modelId}` };
 }

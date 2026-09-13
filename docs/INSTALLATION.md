@@ -56,9 +56,9 @@ sudo install -d -o root -g harnesshub -m 0750 /etc/harnesshub
 sudo install -o root -g harnesshub -m 0640 .env.example /etc/harnesshub/harnesshub.env
 ```
 
-Edit `/etc/harnesshub/harnesshub.env` locally. Set the Discord token, guild ID, administrator user ID, absolute workspace path, and absolute database path. Never paste credentials into Discord or commit this file.
+Edit `/etc/harnesshub/harnesshub.env` locally. Set the Discord token, guild ID, administrator user ID, absolute workspace path, absolute database path, and the trusted update checkout path. Never paste credentials into Discord or commit this file.
 
-Keep `PI_CODING_AGENT_DIR=/var/lib/harnesshub/pi-agent` in the environment file. This permits systemd to protect home directories while Pi reads its native configuration from writable HarnessHub state.
+Keep `PI_CODING_AGENT_DIR=/var/lib/harnesshub/pi-agent` in the environment file. This permits systemd to protect home directories while Pi reads its native configuration from writable HarnessHub state. Set `HARNESSHUB_UPDATE_CHECKOUT` to the trusted Git checkout used for operator updates, for example `/home/thibault/HarnessHub` or another root/operator-controlled checkout.
 
 Install the pinned Pi release without global npm permissions, then authenticate it as the service account using the same agent directory:
 
@@ -88,12 +88,32 @@ sudo systemctl enable --now harnesshub
 sudo systemctl status harnesshub
 ```
 
-After the bot is ready, run `/setup` in the configured guild. Run `/project create` from `#workspace-management`, then send a normal message in the created project channel.
+After the bot is ready, run `/setup` in the configured guild. Run `/project create` from `#workspace-management`, then send a normal message in the created project channel. See [`DISCORD_COMMANDS.md`](DISCORD_COMMANDS.md) for the complete command reference.
+
+### Discord-assisted updates
+
+`/system update-check` verifies the trusted checkout without modifying the running installation.
+
+`/system update-apply confirm:UPDATE` performs a fast-forward-only update from that checkout, runs `npm ci`, runs `npm run check`, and then runs:
+
+```bash
+sudo -n ./scripts/install.sh --no-pi-login
+```
+
+This is intentionally not enabled by broad default privileges. The service account normally runs without root and the systemd unit uses `NoNewPrivileges=true`; depending on host policy this may prevent sudo entirely. To enable Discord-assisted updates for a personal test VM, explicitly authorize only this installer path for the `harnesshub` service account, or replace it with a dedicated root-owned helper. Do not grant broad sudo access.
+
+If update apply is not authorized, the command fails safely and the current service remains running. Manual updates remain:
+
+```bash
+cd /path/to/trusted/HarnessHub
+sudo ./scripts/install.sh --no-pi-login
+```
 
 ### Operational notes
 
-- Do not grant the service account sudo access.
+- Do not grant the service account broad sudo access. If Discord-assisted updates are enabled, restrict them to the reviewed installer/helper only.
 - Configure SSH host keys before cloning over SSH; HarnessHub never accepts unknown keys automatically.
 - Configure Git credentials directly for the service account. HarnessHub rejects credentials embedded in URLs.
 - Back up `/var/lib/harnesshub` and the workspace root together while the service is stopped.
-- Updating, deploying, or enabling this unit remains an explicit operator action.
+- Use `/backup status`, `/repair status`, and `/system status` for operational guidance.
+- Updating, deploying, or enabling this unit remains an explicit operator action unless `/system update-apply` has been deliberately authorized for a personal/test host.

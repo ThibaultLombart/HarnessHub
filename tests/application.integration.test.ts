@@ -33,6 +33,7 @@ describe("HarnessHubApplication", () => {
       databasePath,
       piCommand: "pi",
       maxConcurrentSessions: 2,
+      updateCheckout: root,
       logLevel: "silent",
     };
     const discord: DiscordResources = {
@@ -43,16 +44,28 @@ describe("HarnessHubApplication", () => {
       projectChannelMatches: vi.fn(async () => true),
     };
     const detect = vi.fn(async () => ({ installed: true, version: "test" }));
+    const installPackageResource = vi.fn(async () => undefined);
+    const removePackageResource = vi.fn(async () => undefined);
+    const listModels = vi.fn(async () => [{ provider: "fake", id: "model", label: "fake/model" }]);
+    const startSession = vi.fn(async () => ({
+      externalSessionId: "session",
+      isBusy: false,
+      sendPrompt: async () => "answer",
+      stop: async () => undefined,
+      close: async () => undefined,
+    }));
     const adapter: HarnessAdapter = {
       getCapabilities: () => new Set(),
       detect,
       install: async () => undefined,
       getAuthStatus: async () => ({ authenticated: true, providers: ["test"] }),
-      startSession: async () => {
-        throw new Error("not used");
-      },
+      listModels,
+      setSessionModel: async () => undefined,
+      startSession,
       getSession: () => undefined,
       stopSession: async () => undefined,
+      installPackageResource,
+      removePackageResource,
       dispose: async () => undefined,
     };
     const first = Database.open(databasePath);
@@ -74,12 +87,45 @@ describe("HarnessHubApplication", () => {
       { ...actor, channelId: "management" },
       { name: "Persistent Demo" },
     );
+    const resource = await app.installResource(
+      { ...actor, channelId: project.channelId },
+      { scope: "project", source: "npm:demo-pi-pack" },
+    );
+    expect(installPackageResource).toHaveBeenCalledWith({
+      scope: "project",
+      cwd: path.join(workspaceRoot, "persistent-demo"),
+      source: "npm:demo-pi-pack",
+    });
+    await app.setProjectModel({ ...actor, channelId: project.channelId }, { model: "fake/model" });
+    await app.prompt({ ...actor, channelId: project.channelId, content: "work" }, () => undefined);
+    expect(startSession).toHaveBeenCalledWith(expect.objectContaining({ modelPattern: "fake/model" }));
+    await expect(app.systemStatus({ ...actor, channelId: "management" })).resolves.toContain("Version:");
+    expect(app.mcpStatus({ ...actor, channelId: "management" })).toContain("Pi: no native MCP");
+    expect(app.backupStatus({ ...actor, channelId: "management" })).toContain(
+      "Restore must replace both state",
+    );
+    const repair = await app.repairStatus({ ...actor, channelId: project.channelId });
+    expect(repair).toContain("No repair needed.");
+    const status = await app.projectStatus({ ...actor, channelId: project.channelId });
+    expect(status).toContain("Model: fake/model");
+    expect(status).toContain("Resources: project:npm:demo-pi-pack [installed]");
+    expect(status).toContain("Recent jobs: install-resource [succeeded]");
     first.close();
 
     const second = Database.open(databasePath);
     expect(second.workspaces.findByGuildId(config.discordGuildId)?.managementChannelId).toBe("management");
     expect(second.projects.findByChannelId(project.channelId)?.slug).toBe("persistent-demo");
     expect(fs.existsSync(path.join(workspaceRoot, "persistent-demo", ".git"))).toBe(true);
+    expect(second.resources.findById(resource.id)).toMatchObject({
+      scope: "project",
+      projectId: project.id,
+      source: "npm:demo-pi-pack",
+      status: "installed",
+    });
+    expect(second.modelPreferences.findByProject(project.id)).toMatchObject({
+      provider: "fake",
+      modelId: "model",
+    });
     second.close();
   });
 });

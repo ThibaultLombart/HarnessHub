@@ -14,7 +14,11 @@ import {
 } from "discord.js";
 import type { Logger } from "pino";
 import type { HarnessHubApplication } from "../../application/application.js";
+import type { SystemUpdateStatus } from "../../application/system-update.js";
+import type { Job } from "../database.js";
 import type { HarnessEvent } from "../../domain/harness.js";
+import type { ModelDescriptor } from "../../domain/model.js";
+import type { HarnessResource, ResourceScope } from "../../domain/resource.js";
 import { SessionProgress } from "../../domain/session-progress.js";
 
 const progressUpdateIntervalMs = 15_000;
@@ -39,7 +43,23 @@ const commands = [
             .setMaxLength(2048),
         ),
     )
-    .addSubcommand((command) => command.setName("status").setDescription("Show the current project status")),
+    .addSubcommand((command) => command.setName("status").setDescription("Show the current project status"))
+    .addSubcommand((command) =>
+      command
+        .setName("archive")
+        .setDescription("Archive the current project after explicit slug confirmation")
+        .addStringOption((option) =>
+          option.setName("confirm").setDescription("Type the project slug to confirm").setRequired(true),
+        ),
+    )
+    .addSubcommand((command) =>
+      command
+        .setName("delete")
+        .setDescription("Delete the current project after explicit slug confirmation")
+        .addStringOption((option) =>
+          option.setName("confirm").setDescription("Type the project slug to confirm").setRequired(true),
+        ),
+    ),
   new SlashCommandBuilder()
     .setName("harness")
     .setDescription("Manage the coding harness")
@@ -48,6 +68,163 @@ const commands = [
       command.setName("auth").setDescription("Check native Pi provider authentication"),
     )
     .addSubcommand((command) => command.setName("install").setDescription("Explicitly install Pi")),
+  new SlashCommandBuilder()
+    .setName("system")
+    .setDescription("Inspect and update HarnessHub")
+    .addSubcommand((command) =>
+      command.setName("status").setDescription("Show version, health, permissions, and update guidance"),
+    )
+    .addSubcommand((command) => command.setName("update-check").setDescription("Check for Git updates"))
+    .addSubcommand((command) =>
+      command
+        .setName("update-apply")
+        .setDescription("Apply a fast-forward update after explicit confirmation")
+        .addStringOption((option) =>
+          option.setName("confirm").setDescription("Type UPDATE to confirm").setRequired(true),
+        ),
+    ),
+  new SlashCommandBuilder()
+    .setName("mcp")
+    .setDescription("Inspect MCP support for the configured harness")
+    .addSubcommand((command) =>
+      command.setName("status").setDescription("Show MCP support and alternatives"),
+    ),
+  new SlashCommandBuilder()
+    .setName("backup")
+    .setDescription("Show backup and restore guidance")
+    .addSubcommand((command) =>
+      command.setName("status").setDescription("Show what must be backed up together"),
+    ),
+  new SlashCommandBuilder()
+    .setName("repair")
+    .setDescription("Diagnose degraded HarnessHub mappings")
+    .addSubcommand((command) =>
+      command.setName("status").setDescription("Show workspace or project repair status"),
+    ),
+  new SlashCommandBuilder()
+    .setName("files")
+    .setDescription("Upload files into the current project safely")
+    .addSubcommand((command) =>
+      command
+        .setName("upload")
+        .setDescription("Upload one file without overwriting existing files")
+        .addAttachmentOption((option) =>
+          option.setName("attachment").setDescription("File to upload").setRequired(true),
+        )
+        .addStringOption((option) =>
+          option
+            .setName("path")
+            .setDescription("Relative destination path inside the project")
+            .setRequired(true)
+            .setMaxLength(240),
+        ),
+    ),
+  new SlashCommandBuilder()
+    .setName("git")
+    .setDescription("Inspect and link the current project's Git repository")
+    .addSubcommand((command) =>
+      command.setName("status").setDescription("Show branch, cleanliness, and remote"),
+    )
+    .addSubcommand((command) => command.setName("remote").setDescription("Show the origin remote"))
+    .addSubcommand((command) =>
+      command
+        .setName("link")
+        .setDescription("Add origin remote using a safe HTTPS or SSH URL")
+        .addStringOption((option) =>
+          option
+            .setName("repository")
+            .setDescription("HTTPS or SSH repository URL")
+            .setRequired(true)
+            .setMaxLength(2048),
+        ),
+    ),
+  new SlashCommandBuilder()
+    .setName("jobs")
+    .setDescription("Inspect HarnessHub long-running jobs")
+    .addSubcommand((command) =>
+      command
+        .setName("list")
+        .setDescription("List recent jobs")
+        .addIntegerOption((option) =>
+          option.setName("limit").setDescription("Number of jobs, 1 to 25").setMinValue(1).setMaxValue(25),
+        ),
+    )
+    .addSubcommand((command) =>
+      command
+        .setName("status")
+        .setDescription("Show a job status")
+        .addStringOption((option) => option.setName("id").setDescription("Full job ID").setRequired(true)),
+    ),
+  new SlashCommandBuilder()
+    .setName("model")
+    .setDescription("View and select the Pi model for a project")
+    .addSubcommand((command) => command.setName("list").setDescription("List available Pi models"))
+    .addSubcommand((command) =>
+      command.setName("status").setDescription("Show this project's selected model"),
+    )
+    .addSubcommand((command) =>
+      command
+        .setName("set")
+        .setDescription("Select the Pi model for this project")
+        .addStringOption((option) =>
+          option
+            .setName("model")
+            .setDescription("Model pattern, for example anthropic/claude-sonnet-4-5")
+            .setRequired(true)
+            .setMaxLength(200),
+        ),
+    )
+    .addSubcommand((command) =>
+      command.setName("reset").setDescription("Use Pi's default model for this project"),
+    ),
+  new SlashCommandBuilder()
+    .setName("resource")
+    .setDescription("Manage Pi packages, skills, and harness resources")
+    .addSubcommand((command) =>
+      command
+        .setName("add")
+        .setDescription("Install a Pi package globally or for this project")
+        .addStringOption((option) =>
+          option
+            .setName("scope")
+            .setDescription("Install globally or for the current project")
+            .setRequired(true)
+            .addChoices({ name: "global", value: "global" }, { name: "project", value: "project" }),
+        )
+        .addStringOption((option) =>
+          option
+            .setName("source")
+            .setDescription("Package source: npm:, git:, https:, or ssh:")
+            .setRequired(true)
+            .setMaxLength(2048),
+        ),
+    )
+    .addSubcommand((command) =>
+      command
+        .setName("list")
+        .setDescription("List installed HarnessHub resources")
+        .addStringOption((option) =>
+          option
+            .setName("scope")
+            .setDescription("Optional scope filter")
+            .addChoices({ name: "global", value: "global" }, { name: "project", value: "project" }),
+        ),
+    )
+    .addSubcommand((command) =>
+      command
+        .setName("remove")
+        .setDescription("Remove a managed Pi package by resource ID")
+        .addStringOption((option) =>
+          option
+            .setName("scope")
+            .setDescription("Resource scope")
+            .setRequired(true)
+            .addChoices({ name: "global", value: "global" }, { name: "project", value: "project" }),
+        )
+        .addStringOption((option) =>
+          option.setName("id").setDescription("Resource ID from /resource list").setRequired(true),
+        ),
+    ),
   new SlashCommandBuilder()
     .setName("session")
     .setDescription("Manage the current project session")
@@ -131,10 +308,22 @@ export class DiscordBot {
             },
           );
           await interaction.editReply(`Project created: <#${project.channelId}>.`);
-        } else {
+        } else if (subcommand === "status") {
           await interaction.editReply(
             await this.application.projectStatus({ ...actor, channelId: interaction.channelId }),
           );
+        } else if (subcommand === "archive") {
+          const project = await this.application.archiveProject(
+            { ...actor, channelId: interaction.channelId },
+            { confirm: interaction.options.getString("confirm", true) },
+          );
+          await interaction.editReply(`Project archived: ${project.slug}.`);
+        } else {
+          const project = await this.application.deleteProject(
+            { ...actor, channelId: interaction.channelId },
+            { confirm: interaction.options.getString("confirm", true) },
+          );
+          await interaction.editReply(`Project deleted: ${project.slug}.`);
         }
       } else if (interaction.commandName === "harness") {
         const subcommand = interaction.options.getSubcommand();
@@ -158,6 +347,136 @@ export class DiscordBot {
         } else {
           await this.application.installHarness({ ...actor, channelId: interaction.channelId });
           await interaction.editReply("Pi installation completed.");
+        }
+      } else if (interaction.commandName === "system") {
+        const subcommand = interaction.options.getSubcommand();
+        if (subcommand === "update-check") {
+          await interaction.editReply(
+            formatSystemUpdate(
+              await this.application.systemUpdateStatus({ ...actor, channelId: interaction.channelId }),
+            ),
+          );
+        } else if (subcommand === "update-apply") {
+          await interaction.editReply(
+            formatSystemUpdate(
+              await this.application.applySystemUpdate(
+                { ...actor, channelId: interaction.channelId },
+                { confirm: interaction.options.getString("confirm", true) },
+              ),
+            ),
+          );
+        } else {
+          await interaction.editReply(
+            await this.application.systemStatus({ ...actor, channelId: interaction.channelId }),
+          );
+        }
+      } else if (interaction.commandName === "mcp") {
+        await interaction.editReply(
+          this.application.mcpStatus({ ...actor, channelId: interaction.channelId }),
+        );
+      } else if (interaction.commandName === "backup") {
+        await interaction.editReply(
+          this.application.backupStatus({ ...actor, channelId: interaction.channelId }),
+        );
+      } else if (interaction.commandName === "repair") {
+        await interaction.editReply(
+          await this.application.repairStatus({ ...actor, channelId: interaction.channelId }),
+        );
+      } else if (interaction.commandName === "files") {
+        const attachment = interaction.options.getAttachment("attachment", true);
+        const response = await fetch(attachment.url);
+        if (!response.ok) throw new Error("Could not download Discord attachment");
+        const content = new Uint8Array(await response.arrayBuffer());
+        const relativePath = interaction.options.getString("path", true);
+        await this.application.uploadProjectFile(
+          { ...actor, channelId: interaction.channelId },
+          { relativePath, content },
+        );
+        await interaction.editReply(`Uploaded file to ${relativePath}.`);
+      } else if (interaction.commandName === "git") {
+        const subcommand = interaction.options.getSubcommand();
+        if (subcommand === "link") {
+          const remote = await this.application.linkGitRemote(
+            { ...actor, channelId: interaction.channelId },
+            interaction.options.getString("repository", true),
+          );
+          await interaction.editReply(`Git origin linked: ${remote}`);
+        } else {
+          const status = await this.application.gitStatus({ ...actor, channelId: interaction.channelId });
+          await interaction.editReply(
+            subcommand === "remote"
+              ? `Origin: ${status.remote ?? "none"}`
+              : `Branch: ${status.branch}\nState: ${status.clean ? "clean" : "dirty"}\nOrigin: ${status.remote ?? "none"}`,
+          );
+        }
+      } else if (interaction.commandName === "jobs") {
+        if (interaction.options.getSubcommand() === "status") {
+          await interaction.editReply(
+            formatJob(
+              this.application.jobStatus(
+                { ...actor, channelId: interaction.channelId },
+                interaction.options.getString("id", true),
+              ),
+            ),
+          );
+        } else {
+          await interaction.editReply(
+            formatJobs(
+              this.application.listJobs(
+                { ...actor, channelId: interaction.channelId },
+                interaction.options.getInteger("limit") ?? 10,
+              ),
+            ),
+          );
+        }
+      } else if (interaction.commandName === "model") {
+        const subcommand = interaction.options.getSubcommand();
+        if (subcommand === "list") {
+          const models = await this.application.listModels({ ...actor, channelId: interaction.channelId });
+          await interaction.editReply(formatModels(models));
+        } else if (subcommand === "status") {
+          const preference = this.application.modelStatus({ ...actor, channelId: interaction.channelId });
+          await interaction.editReply(
+            preference === null
+              ? "This project uses Pi's default model."
+              : `Selected model: ${preference.provider}/${preference.modelId}`,
+          );
+        } else if (subcommand === "set") {
+          const preference = await this.application.setProjectModel(
+            { ...actor, channelId: interaction.channelId },
+            { model: interaction.options.getString("model", true) },
+          );
+          await interaction.editReply(`Selected model: ${preference.provider}/${preference.modelId}.`);
+        } else {
+          this.application.resetProjectModel({ ...actor, channelId: interaction.channelId });
+          await interaction.editReply("This project now uses Pi's default model.");
+        }
+      } else if (interaction.commandName === "resource") {
+        const subcommand = interaction.options.getSubcommand();
+        if (subcommand === "add") {
+          const resource = await this.application.installResource(
+            { ...actor, channelId: interaction.channelId },
+            {
+              scope: resourceScope(interaction.options.getString("scope", true)),
+              source: interaction.options.getString("source", true),
+            },
+          );
+          await interaction.editReply(`Resource installed: ${formatResource(resource)}.`);
+        } else if (subcommand === "remove") {
+          const resource = await this.application.removeResource(
+            { ...actor, channelId: interaction.channelId },
+            {
+              scope: resourceScope(interaction.options.getString("scope", true)),
+              id: interaction.options.getString("id", true),
+            },
+          );
+          await interaction.editReply(`Resource removed: ${formatResource(resource)}.`);
+        } else {
+          const resources = this.application.listResources(
+            { ...actor, channelId: interaction.channelId },
+            optionalResourceScope(interaction.options.getString("scope")),
+          );
+          await interaction.editReply(formatResources(resources));
         }
       } else if (interaction.commandName === "session") {
         const project = this.application.projectForChannel({ ...actor, channelId: interaction.channelId });
@@ -271,6 +590,86 @@ function actorFrom(guildId: string | null, userId: string): { guildId: string; u
   return { guildId: guildId ?? "", userId };
 }
 
+function formatSystemUpdate(status: SystemUpdateStatus): string {
+  return [
+    "HarnessHub update status",
+    `Checkout: ${status.checkout}`,
+    `Branch: ${status.branch}`,
+    `HEAD: ${status.head.slice(0, 12)}`,
+    `Upstream: ${status.upstream ?? "none"}`,
+    `Upstream HEAD: ${status.upstreamHead?.slice(0, 12) ?? "none"}`,
+    `Working tree: ${status.clean ? "clean" : "dirty"}`,
+    `Update available: ${status.updateAvailable ? "yes" : "no"}`,
+  ].join("\n");
+}
+
+function formatJobs(jobs: readonly Job[], maximumLength = 1900): string {
+  if (jobs.length === 0) return "No jobs found.";
+  const lines: string[] = [];
+  for (const job of jobs) {
+    const line = formatJob(job);
+    const next = [...lines, line].join("\n");
+    if (next.length > maximumLength) {
+      lines.push(`…and ${String(jobs.length - lines.length)} more job(s).`);
+      break;
+    }
+    lines.push(line);
+  }
+  return lines.join("\n");
+}
+
+function formatJob(job: Job): string {
+  const error = job.safeError === null ? "" : ` — ${job.safeError}`;
+  return `${job.id.slice(0, 8)} ${job.type} [${job.status}] created:${job.createdAt}${error}`;
+}
+
+function formatModels(models: readonly ModelDescriptor[], maximumLength = 1900): string {
+  if (models.length === 0) return "No Pi models are currently available. Check native Pi authentication.";
+  const lines: string[] = [];
+  for (const model of models) {
+    const line = `${model.provider}/${model.id}${model.label === "" ? "" : ` — ${model.label}`}`;
+    const next = [...lines, line].join("\n");
+    if (next.length > maximumLength) {
+      lines.push(`…and ${String(models.length - lines.length)} more model(s).`);
+      break;
+    }
+    lines.push(line);
+  }
+  return lines.join("\n");
+}
+
+function resourceScope(value: string): ResourceScope {
+  if (value === "global" || value === "project") return value;
+  throw new Error("Invalid resource scope");
+}
+
+function optionalResourceScope(value: string | null): ResourceScope | undefined {
+  return value === null ? undefined : resourceScope(value);
+}
+
+function formatResources(resources: readonly HarnessResource[], maximumLength = 1900): string {
+  const visible = resources.filter((resource) => resource.status !== "removed");
+  if (visible.length === 0) return "No managed resources found.";
+  const lines: string[] = [];
+  for (const resource of visible) {
+    const line = formatResource(resource);
+    const next = [...lines, line].join("\n");
+    if (next.length > maximumLength) {
+      lines.push(`…and ${String(visible.length - lines.length)} more resource(s).`);
+      break;
+    }
+    lines.push(line);
+  }
+  return lines.join("\n");
+}
+
+function formatResource(resource: HarnessResource): string {
+  const id = resource.id.slice(0, 8);
+  const project = resource.scope === "project" ? ` project:${resource.projectId ?? "unknown"}` : "";
+  const error = resource.safeError === null ? "" : ` — ${resource.safeError}`;
+  return `${id} ${resource.scope}${project} ${resource.type} ${resource.source} [${resource.status}]${error}`;
+}
+
 export function splitDiscordMessage(message: string, maximum = 1900): string[] {
   if (message.length <= maximum) return [message];
   const chunks: string[] = [];
@@ -297,7 +696,16 @@ export function safeDiscordError(error: unknown): string {
       "ManagementChannelRequiredError",
       "ProjectAlreadyExistsError",
       "ProjectDegradedError",
+      "ProjectDeletionBlockedError",
       "InvalidProjectInputError",
+      "InvalidResourceInputError",
+      "InvalidModelInputError",
+      "GitRemoteAlreadyConfiguredError",
+      "ModelManagementUnsupportedError",
+      "SystemUpdateBlockedError",
+      "ResourceNotFoundError",
+      "ResourceProjectRequiredError",
+      "ResourceScopeMismatchError",
       "SessionBusyError",
       "SessionStoppedError",
       "WorkspaceDegradedError",

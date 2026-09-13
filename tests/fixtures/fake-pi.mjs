@@ -4,6 +4,19 @@ if (versionMode) {
   process.exit(0);
 }
 
+const installIndex = process.argv.indexOf("install");
+const removeIndex = process.argv.indexOf("remove");
+if (installIndex >= 0 || removeIndex >= 0) {
+  const operationIndex = installIndex >= 0 ? installIndex : removeIndex;
+  const operation = process.argv[operationIndex];
+  const source = process.argv.at(-1);
+  if (source?.includes("fail") === true) process.exit(3);
+  process.stdout.write(
+    `${JSON.stringify({ operation, args: process.argv.slice(operationIndex + 1), cwd: process.cwd() })}\n`,
+  );
+  process.exit(0);
+}
+
 let buffer = "";
 process.stdin.setEncoding("utf8");
 process.stdin.on("data", (chunk) => {
@@ -57,13 +70,26 @@ process.stdin.on("data", (chunk) => {
       });
     } else if (command.type === "abort") {
       send({ id: command.id, type: "response", command: "abort", success: true });
+    } else if (command.type === "set_model") {
+      send({
+        id: command.id,
+        type: "response",
+        command: "set_model",
+        success: command.provider === "fake" && command.modelId === "model",
+        data: { provider: command.provider, id: command.modelId },
+      });
     } else if (command.type === "get_available_models") {
       send({
         id: command.id,
         type: "response",
         command: "get_available_models",
         success: true,
-        data: { models: [{ provider: "fake", id: "model" }] },
+        data: {
+          models: [
+            { provider: "fake", id: "model", name: "Fake Model" },
+            { provider: "other", id: "small" },
+          ],
+        },
       });
     }
   }

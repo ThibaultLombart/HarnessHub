@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { ResourceProjectRequiredError } from "../src/application/manage-resources.js";
 import { safeDiscordError, splitDiscordMessage } from "../src/infrastructure/discord/discord-bot.js";
 
 describe("splitDiscordMessage", () => {
@@ -11,6 +12,12 @@ describe("splitDiscordMessage", () => {
     const chunks = splitDiscordMessage(`1234😀5678`, 5);
     expect(chunks.join("")).toBe("1234😀5678");
     expect(chunks[0]).toBe("1234");
+  });
+
+  it("renders safe resource management errors", () => {
+    expect(safeDiscordError(new ResourceProjectRequiredError())).toBe(
+      "This resource operation requires a project channel",
+    );
   });
 
   it("explains the Discord permissions required by workspace setup", () => {

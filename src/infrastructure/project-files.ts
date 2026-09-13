@@ -39,6 +39,47 @@ export class ProjectFiles {
     await fs.rm(destination, { recursive: true, force: true });
   }
 
+  public async writeProjectFile(input: {
+    projectPath: string;
+    relativePath: string;
+    content: Uint8Array;
+    maximumBytes: number;
+  }): Promise<string> {
+    if (input.content.byteLength > input.maximumBytes) throw new Error("Uploaded file is too large");
+    if (
+      input.relativePath.length < 1 ||
+      input.relativePath.length > 240 ||
+      /[\0\r\n]/.test(input.relativePath)
+    ) {
+      throw new Error("Upload path is invalid");
+    }
+    if (path.isAbsolute(input.relativePath) || input.relativePath.split(/[\\/]+/).includes("..")) {
+      throw new Error("Upload path must stay inside the project");
+    }
+    const canonicalProject = await fs.realpath(input.projectPath);
+    this.assertInsideRoot(canonicalProject);
+    const destination = path.resolve(canonicalProject, input.relativePath);
+    const relative = path.relative(canonicalProject, destination);
+    if (relative === "" || relative.startsWith("..") || path.isAbsolute(relative)) {
+      throw new Error("Upload path must stay inside the project");
+    }
+    await fs.mkdir(path.dirname(destination), { recursive: true, mode: 0o700 });
+    const canonicalParent = await fs.realpath(path.dirname(destination));
+    const parentRelative = path.relative(canonicalProject, canonicalParent);
+    if (parentRelative.startsWith("..") || path.isAbsolute(parentRelative)) {
+      throw new Error("Upload path escapes the project through a symlink");
+    }
+    try {
+      await fs.writeFile(destination, input.content, { flag: "wx", mode: 0o600 });
+    } catch (error) {
+      if (error instanceof Error && "code" in error && error.code === "EEXIST") {
+        throw new Error("Upload destination already exists", { cause: error });
+      }
+      throw error;
+    }
+    return destination;
+  }
+
   private async createAtomically(
     destination: string,
     populate: (temporary: string) => Promise<void>,

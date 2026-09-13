@@ -1,3 +1,6 @@
+import type { ModelDescriptor } from "./model.js";
+import type { ResourceScope } from "./resource.js";
+
 export class SessionBusyError extends Error {
   public constructor() {
     super("This project already has an active prompt");
@@ -40,10 +43,15 @@ export type HarnessAdapter = {
     projectId: string;
     cwd: string;
     name: string;
+    modelPattern?: string;
     externalSessionId?: string;
     onEvent: (event: HarnessEvent) => void;
   }): Promise<HarnessSession>;
   getSession(projectId: string): HarnessSession | undefined;
   stopSession(projectId: string): Promise<void>;
+  installPackageResource?(input: { scope: ResourceScope; cwd: string; source: string }): Promise<void>;
+  removePackageResource?(input: { scope: ResourceScope; cwd: string; source: string }): Promise<void>;
+  listModels?(cwd: string): Promise<readonly ModelDescriptor[]>;
+  setSessionModel?(projectId: string, provider: string, modelId: string): Promise<void>;
   dispose(): Promise<void>;
 };

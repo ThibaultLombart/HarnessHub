@@ -81,4 +81,66 @@ describe("ProjectFiles", () => {
 
     await expect(files.createEmptyGitProject(target)).rejects.toThrow(/already exists/i);
   });
+
+  it("writes uploaded files only inside a project without overwriting", async () => {
+    const root = temporaryRoot();
+    const files = await ProjectFiles.create(root);
+    const projectPath = path.join(root, "demo");
+    await files.createEmptyGitProject(projectPath);
+
+    const written = await files.writeProjectFile({
+      projectPath,
+      relativePath: "docs/input.txt",
+      content: new TextEncoder().encode("hello"),
+      maximumBytes: 100,
+    });
+
+    expect(written).toBe(path.join(projectPath, "docs", "input.txt"));
+    expect(fs.readFileSync(written, "utf8")).toBe("hello");
+    await expect(
+      files.writeProjectFile({
+        projectPath,
+        relativePath: "docs/input.txt",
+        content: new TextEncoder().encode("again"),
+        maximumBytes: 100,
+      }),
+    ).rejects.toThrow(/already exists/i);
+  });
+
+  it.each(["../escape.txt", "/absolute.txt", "line\nbreak.txt"])(
+    "rejects unsafe upload path %s",
+    async (relativePath) => {
+      const root = temporaryRoot();
+      const files = await ProjectFiles.create(root);
+      const projectPath = path.join(root, "demo");
+      await files.createEmptyGitProject(projectPath);
+
+      await expect(
+        files.writeProjectFile({
+          projectPath,
+          relativePath,
+          content: new TextEncoder().encode("hello"),
+          maximumBytes: 100,
+        }),
+      ).rejects.toThrow(/path|inside|invalid/i);
+    },
+  );
+
+  it("rejects symlink escapes", async () => {
+    const root = temporaryRoot();
+    const outside = temporaryRoot();
+    const files = await ProjectFiles.create(root);
+    const projectPath = path.join(root, "demo");
+    await files.createEmptyGitProject(projectPath);
+    fs.symlinkSync(outside, path.join(projectPath, "escape"));
+
+    await expect(
+      files.writeProjectFile({
+        projectPath,
+        relativePath: "escape/file.txt",
+        content: new TextEncoder().encode("hello"),
+        maximumBytes: 100,
+      }),
+    ).rejects.toThrow(/escape/i);
+  });
 });

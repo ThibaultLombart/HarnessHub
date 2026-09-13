@@ -3,6 +3,7 @@ import path from "node:path";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { SessionBusyError, type HarnessCapability, type HarnessEvent } from "../../domain/harness.js";
+import type { ModelDescriptor } from "../../domain/model.js";
 export { SessionBusyError } from "../../domain/harness.js";
 import { PiRpcClient, type RpcRecord } from "./rpc-client.js";
 
@@ -65,6 +66,10 @@ export class PiSession {
       this.settle = undefined;
       this.rejectSettle = undefined;
     }
+  }
+
+  public async setModel(provider: string, modelId: string): Promise<void> {
+    await this.client.command("set_model", { provider, modelId }, 30_000);
   }
 
   public async stop(): Promise<void> {
@@ -210,10 +215,36 @@ export class PiAdapter {
     }
   }
 
+  public async listModels(cwd: string): Promise<readonly ModelDescriptor[]> {
+    const executable = await this.resolveExecutable();
+    const client = new PiRpcClient({
+      command: executable.command,
+      arguments: [...executable.arguments, "--mode", "rpc", "--no-session", "--no-approve"],
+      cwd: await fs.realpath(cwd),
+    });
+    try {
+      const response = await client.command("get_available_models", {}, 30_000);
+      const data = objectValue(response.data);
+      const models = Array.isArray(data.models) ? data.models : [];
+      return models.flatMap((model): ModelDescriptor[] => {
+        const value = objectValue(model);
+        const provider = typeof value.provider === "string" ? value.provider : "";
+        const id =
+          typeof value.id === "string" ? value.id : typeof value.modelId === "string" ? value.modelId : "";
+        if (provider === "" || id === "") return [];
+        const name = typeof value.name === "string" ? value.name : "";
+        return [{ provider, id, label: name }];
+      });
+    } finally {
+      await client.close();
+    }
+  }
+
   public async startSession(input: {
     projectId: string;
     cwd: string;
     name: string;
+    modelPattern?: string;
     externalSessionId?: string;
     onEvent: (event: HarnessEvent) => void;
   }): Promise<PiSession> {
@@ -241,6 +272,7 @@ export class PiAdapter {
     projectId: string;
     cwd: string;
     name: string;
+    modelPattern?: string;
     externalSessionId?: string;
     onEvent: (event: HarnessEvent) => void;
   }): Promise<PiSession> {
@@ -258,6 +290,7 @@ export class PiAdapter {
       input.name,
       "--no-approve",
     ];
+    if (input.modelPattern !== undefined) arguments_.push("--model", input.modelPattern);
     if (input.externalSessionId !== undefined) arguments_.push("--session", input.externalSessionId);
     const client = new PiRpcClient({ command: executable.command, arguments: arguments_, cwd });
     try {
@@ -312,6 +345,48 @@ export class PiAdapter {
 
   public async stopSession(projectId: string): Promise<void> {
     await this.sessions.get(projectId)?.stop();
+  }
+
+  public async setSessionModel(projectId: string, provider: string, modelId: string): Promise<void> {
+    await this.sessions.get(projectId)?.setModel(provider, modelId);
+  }
+
+  public async installPackageResource(input: {
+    scope: "global" | "project";
+    cwd: string;
+    source: string;
+  }): Promise<void> {
+    await this.runPiPackageCommand(
+      ["install", ...(input.scope === "project" ? ["-l"] : []), input.source],
+      input.cwd,
+    );
+  }
+
+  public async removePackageResource(input: {
+    scope: "global" | "project";
+    cwd: string;
+    source: string;
+  }): Promise<void> {
+    await this.runPiPackageCommand(
+      ["remove", ...(input.scope === "project" ? ["-l"] : []), input.source],
+      input.cwd,
+    );
+  }
+
+  private async runPiPackageCommand(arguments_: readonly string[], cwd: string): Promise<void> {
+    const executable = await this.resolveExecutable();
+    await executeFile(executable.command, [...executable.arguments, ...arguments_], {
+      cwd: await fs.realpath(cwd),
+      shell: false,
+      windowsHide: true,
+      timeout: 5 * 60_000,
+      maxBuffer: 1024 * 1024,
+      env: {
+        ...process.env,
+        GIT_TERMINAL_PROMPT: "0",
+        GIT_SSH_COMMAND: "ssh -o BatchMode=yes -o StrictHostKeyChecking=yes",
+      },
+    });
   }
 
   public async dispose(): Promise<void> {
