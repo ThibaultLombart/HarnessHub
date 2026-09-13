@@ -2,7 +2,7 @@
 
 The roadmap is ordered by **usable vertical slices**, not by technical layers built in advance.
 
-Implementation now exists for the M0–M3 MVP path. Automated local checks cover its core and infrastructure contracts, but these milestones remain unverified against a real Discord guild, authenticated live Pi task, and Linux/systemd host; `docs/CURRENT_STATE.md` records those reservations.
+Implementation exists for the M0–M3 MVP path. Automated checks cover its core and infrastructure contracts, and the complete happy path has been operator-validated on a real Linux/systemd VM, Discord guild, and authenticated Pi provider. Recovery simulation, live remote cloning, and backup restoration remain outstanding; `docs/CURRENT_STATE.md` records the exact evidence and reservations.
 
 ## M0 — Executable foundation
 
