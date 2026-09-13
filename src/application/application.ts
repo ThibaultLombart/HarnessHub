@@ -14,6 +14,7 @@ import type { Project } from "../domain/project.js";
 import type { HarnessResource, ResourceScope } from "../domain/resource.js";
 import type { GuildWorkspace } from "../domain/workspace.js";
 import { CreateProject } from "./create-project.js";
+import { GitOperations, type GitProjectStatus } from "./git-operations.js";
 import { HarnessHub, UnmappedChannelError, type Actor } from "./harness-hub.js";
 import { ManageResources, type ResourceHarnessPort } from "./manage-resources.js";
 import { SetupWorkspace } from "./setup-workspace.js";
@@ -63,6 +64,7 @@ export class HarnessHubApplication {
   private readonly setupWorkspace: SetupWorkspace;
   private readonly createProjectUseCase: CreateProject;
   private readonly manageResources: ManageResources;
+  private readonly git = new GitOperations();
 
   public constructor(
     private readonly config: Config,
@@ -144,6 +146,18 @@ export class HarnessHubApplication {
       },
       project.id,
     );
+  }
+
+  public async gitStatus(actor: Actor & { channelId: string }): Promise<GitProjectStatus> {
+    const project = this.projectForChannel(actor);
+    if (!(await this.projectResourcesMatch(project))) throw new ProjectDegradedError();
+    return this.git.status(project);
+  }
+
+  public async linkGitRemote(actor: Actor & { channelId: string }, repositoryUrl: string): Promise<string> {
+    const project = this.projectForChannel(actor);
+    if (!(await this.projectResourcesMatch(project))) throw new ProjectDegradedError();
+    return this.runJob("link-git-remote", () => this.git.linkRemote(project, repositoryUrl), project.id);
   }
 
   public listJobs(actor: Actor & { channelId: string }, limit = 10): Job[] {

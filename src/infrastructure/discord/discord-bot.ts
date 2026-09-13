@@ -68,6 +68,25 @@ const commands = [
     )
     .addSubcommand((command) => command.setName("install").setDescription("Explicitly install Pi")),
   new SlashCommandBuilder()
+    .setName("git")
+    .setDescription("Inspect and link the current project's Git repository")
+    .addSubcommand((command) =>
+      command.setName("status").setDescription("Show branch, cleanliness, and remote"),
+    )
+    .addSubcommand((command) => command.setName("remote").setDescription("Show the origin remote"))
+    .addSubcommand((command) =>
+      command
+        .setName("link")
+        .setDescription("Add origin remote using a safe HTTPS or SSH URL")
+        .addStringOption((option) =>
+          option
+            .setName("repository")
+            .setDescription("HTTPS or SSH repository URL")
+            .setRequired(true)
+            .setMaxLength(2048),
+        ),
+    ),
+  new SlashCommandBuilder()
     .setName("jobs")
     .setDescription("Inspect HarnessHub long-running jobs")
     .addSubcommand((command) =>
@@ -276,6 +295,22 @@ export class DiscordBot {
         } else {
           await this.application.installHarness({ ...actor, channelId: interaction.channelId });
           await interaction.editReply("Pi installation completed.");
+        }
+      } else if (interaction.commandName === "git") {
+        const subcommand = interaction.options.getSubcommand();
+        if (subcommand === "link") {
+          const remote = await this.application.linkGitRemote(
+            { ...actor, channelId: interaction.channelId },
+            interaction.options.getString("repository", true),
+          );
+          await interaction.editReply(`Git origin linked: ${remote}`);
+        } else {
+          const status = await this.application.gitStatus({ ...actor, channelId: interaction.channelId });
+          await interaction.editReply(
+            subcommand === "remote"
+              ? `Origin: ${status.remote ?? "none"}`
+              : `Branch: ${status.branch}\nState: ${status.clean ? "clean" : "dirty"}\nOrigin: ${status.remote ?? "none"}`,
+          );
         }
       } else if (interaction.commandName === "jobs") {
         if (interaction.options.getSubcommand() === "status") {
@@ -555,6 +590,7 @@ export function safeDiscordError(error: unknown): string {
       "InvalidProjectInputError",
       "InvalidResourceInputError",
       "InvalidModelInputError",
+      "GitRemoteAlreadyConfiguredError",
       "ModelManagementUnsupportedError",
       "ResourceNotFoundError",
       "ResourceProjectRequiredError",
