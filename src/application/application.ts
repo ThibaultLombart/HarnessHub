@@ -45,6 +45,8 @@ export class ProjectDeletionBlockedError extends Error {
   }
 }
 
+const maximumUploadBytes = 5 * 1024 * 1024;
+
 export class ModelManagementUnsupportedError extends Error {
   public constructor() {
     super("The configured harness does not support model management");
@@ -144,6 +146,25 @@ export class HarnessHubApplication {
         this.database.projects.delete(project.id);
         return deleted;
       },
+      project.id,
+    );
+  }
+
+  public async uploadProjectFile(
+    actor: Actor & { channelId: string },
+    input: { relativePath: string; content: Uint8Array },
+  ): Promise<string> {
+    const project = this.projectForChannel(actor);
+    if (!(await this.projectResourcesMatch(project))) throw new ProjectDegradedError();
+    return this.runJob(
+      "upload-file",
+      () =>
+        this.files.writeProjectFile({
+          projectPath: project.path,
+          relativePath: input.relativePath,
+          content: input.content,
+          maximumBytes: maximumUploadBytes,
+        }),
       project.id,
     );
   }
@@ -468,5 +489,17 @@ function safeJobError(error: unknown): string {
     return error.message;
   if (error instanceof Error && error.name === "InvalidResourceInputError") return error.message;
   if (error instanceof Error && error.name === "ProjectDeletionBlockedError") return error.message;
+  if (
+    error instanceof Error &&
+    [
+      "Uploaded file is too large",
+      "Upload path is invalid",
+      "Upload path must stay inside the project",
+      "Upload path escapes the project through a symlink",
+      "Upload destination already exists",
+    ].includes(error.message)
+  ) {
+    return error.message;
+  }
   return "Operation failed; inspect the redacted service logs";
 }

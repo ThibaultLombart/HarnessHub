@@ -68,6 +68,24 @@ const commands = [
     )
     .addSubcommand((command) => command.setName("install").setDescription("Explicitly install Pi")),
   new SlashCommandBuilder()
+    .setName("files")
+    .setDescription("Upload files into the current project safely")
+    .addSubcommand((command) =>
+      command
+        .setName("upload")
+        .setDescription("Upload one file without overwriting existing files")
+        .addAttachmentOption((option) =>
+          option.setName("attachment").setDescription("File to upload").setRequired(true),
+        )
+        .addStringOption((option) =>
+          option
+            .setName("path")
+            .setDescription("Relative destination path inside the project")
+            .setRequired(true)
+            .setMaxLength(240),
+        ),
+    ),
+  new SlashCommandBuilder()
     .setName("git")
     .setDescription("Inspect and link the current project's Git repository")
     .addSubcommand((command) =>
@@ -296,6 +314,17 @@ export class DiscordBot {
           await this.application.installHarness({ ...actor, channelId: interaction.channelId });
           await interaction.editReply("Pi installation completed.");
         }
+      } else if (interaction.commandName === "files") {
+        const attachment = interaction.options.getAttachment("attachment", true);
+        const response = await fetch(attachment.url);
+        if (!response.ok) throw new Error("Could not download Discord attachment");
+        const content = new Uint8Array(await response.arrayBuffer());
+        const relativePath = interaction.options.getString("path", true);
+        await this.application.uploadProjectFile(
+          { ...actor, channelId: interaction.channelId },
+          { relativePath, content },
+        );
+        await interaction.editReply(`Uploaded file to ${relativePath}.`);
       } else if (interaction.commandName === "git") {
         const subcommand = interaction.options.getSubcommand();
         if (subcommand === "link") {
