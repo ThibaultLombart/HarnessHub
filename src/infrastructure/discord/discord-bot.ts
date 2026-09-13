@@ -79,8 +79,23 @@ export class DiscordBot {
       );
     });
     await this.client.login(this.token);
-    if (!this.client.isReady()) throw new Error("Discord client did not become ready");
-    await this.client.application.commands.set(commands, this.guildId);
+    if (!this.client.isReady()) {
+      await new Promise<void>((resolve, reject) => {
+        const onReady = (): void => {
+          clearTimeout(timeout);
+          resolve();
+        };
+        const timeout = setTimeout(() => {
+          this.client.off(Events.ClientReady, onReady);
+          reject(new Error("Discord client did not become ready within 30 seconds"));
+        }, 30_000);
+        this.client.once(Events.ClientReady, onReady);
+      });
+    }
+    const clientApplication = this.client.application;
+    if (clientApplication === null)
+      throw new Error("Discord application is unavailable after client readiness");
+    await clientApplication.commands.set(commands, this.guildId);
     this.logger.info({ guildId: this.guildId }, "Discord commands registered");
   }
 
