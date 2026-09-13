@@ -283,7 +283,9 @@ export function splitDiscordMessage(message: string, maximum = 1900): string[] {
   return chunks;
 }
 
-function safeDiscordError(error: unknown): string {
+export function safeDiscordError(error: unknown): string {
+  if (error instanceof Error && "code" in error && error.code === 50_013)
+    return "HarnessHub needs the Discord permissions Manage Channels and Manage Roles to set up its private workspace.";
   if (
     error instanceof Error &&
     [

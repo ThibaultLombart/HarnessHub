@@ -144,6 +144,7 @@ Ne publie jamais ce token dans Discord, Git ou une capture d’écran.
    - Send Messages ;
    - Read Message History ;
    - Manage Channels ;
+   - Manage Roles ;
 4. ouvre l’URL générée ;
 5. invite le bot dans ton serveur Discord privé.
 
@@ -340,6 +341,10 @@ sudo grep -E '^(DISCORD_GUILD_ID|DISCORD_ADMIN_USER_ID|HARNESSHUB_)' /etc/harnes
 ```
 
 Le fichier doit appartenir à `root:harnesshub` et avoir le mode `0640`.
+
+### `/setup` échoue avec `DiscordAPIError[50013]`
+
+Dans **Server Settings → Roles → HarnessHub**, accorde au rôle du bot **Manage Channels** et **Manage Roles**, sans lui donner **Administrator**. `Manage Roles` est nécessaire pour appliquer la frontière privée de la catégorie et des salons. Relance ensuite `/setup` ; la commande répare aussi un espace partiellement créé.
 
 ### `/setup` ou les commandes slash n’apparaissent pas
 

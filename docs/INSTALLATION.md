@@ -32,7 +32,7 @@ The script deliberately does not download a root-level Node.js installation, cre
 
 The automated installer creates the non-root `harnesshub` account and installs Pi. Native Pi provider authentication is required only before the first coding task.
 
-Enable the bot's **Message Content** privileged intent. Invite it only to the intended guild with permission to view messages and manage channels.
+Enable the bot's **Message Content** privileged intent. Invite it only to the intended guild with **View Channels**, **Send Messages**, **Read Message History**, **Manage Channels**, and **Manage Roles**. Do not grant **Administrator**. Manage Roles is required to create and enforce the private channel permission boundary.
 
 ## Manual installation
 
