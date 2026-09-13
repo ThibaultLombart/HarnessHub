@@ -28,7 +28,13 @@ The checks cover formatting, strict linting, type checking, unit/integration tes
 
 ## Install and operate
 
-See [`docs/INSTALLATION.md`](docs/INSTALLATION.md) for the non-root Linux/systemd procedure. Real credentials belong in `/etc/harnesshub/harnesshub.env`, never in this repository or Discord.
+From a trusted checkout on a Linux/systemd host:
+
+```bash
+sudo ./scripts/install.sh
+```
+
+The interactive installer builds, validates, configures, installs Pi locally, and starts HarnessHub. Creating the Discord application and approving the native model-provider login remain explicit human trust steps. See [`docs/INSTALLATION.md`](docs/INSTALLATION.md) for prerequisites, options, and the manual procedure. Real credentials belong in `/etc/harnesshub/harnesshub.env`, never in this repository or Discord.
 
 The principal Discord flow is:
 

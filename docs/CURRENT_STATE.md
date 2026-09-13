@@ -16,7 +16,7 @@
 - explicit Pi capabilities, detection, pinned non-root installation, and native auth-status reporting;
 - supervised Pi RPC subprocesses with strict JSONL framing, persistent session IDs, concurrency limits, stop/resume, and crash recovery;
 - ordinary project-channel prompts with compact tool progress, bounded Discord output, and no token-by-token streaming;
-- non-root systemd unit and installation documentation.
+- non-root systemd unit, installation documentation, and an interactive idempotent `sudo ./scripts/install.sh` installer with protected credential input and rollback copies.
 
 ## Automated evidence
 
