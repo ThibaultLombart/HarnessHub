@@ -212,7 +212,11 @@ fi
 mv -- "${STAGING_DIR}" "${APP_DIR}"
 STAGING_DIR=""
 chown -R root:root "${APP_DIR}"
-chmod 0755 "${APP_DIR}"
+chmod -R u=rwX,go=rX "${APP_DIR}"
+if ! runuser -u "${APP_USER}" -- test -r "${APP_DIR}/dist/main.js"; then
+  printf 'Installed entry point is not readable by %s: %s/dist/main.js\n' "${APP_USER}" "${APP_DIR}" >&2
+  exit 1
+fi
 
 runuser -u "${APP_USER}" -- env \
   HOME="${STATE_DIR}" \

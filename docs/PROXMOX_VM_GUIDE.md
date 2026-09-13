@@ -312,14 +312,14 @@ Avant un changement important, crée également un snapshot Proxmox. Un snapshot
 
 ## Dépannage
 
-### Le service échoue avec `status=200/CHDIR`
+### Le service échoue avec `status=200/CHDIR` ou `MODULE_NOT_FOUND`
 
-Une ancienne version de l’installateur a pu créer `/opt/harnesshub` sans droit de traversée pour le compte système. Répare uniquement le mode du répertoire racine, puis redémarre :
+Une ancienne version de l’installateur a pu rendre `/opt/harnesshub` ou ses fichiers compilés illisibles pour le compte système. Répare les modes de l’application, puis redémarre. Les secrets ne se trouvent pas dans ce répertoire :
 
 ```bash
 sudo systemctl stop harnesshub
-sudo chown root:root /opt/harnesshub
-sudo chmod 0755 /opt/harnesshub
+sudo chown -R root:root /opt/harnesshub
+sudo chmod -R u=rwX,go=rX /opt/harnesshub
 sudo systemctl reset-failed harnesshub
 sudo systemctl start harnesshub
 sudo systemctl status harnesshub --no-pager
