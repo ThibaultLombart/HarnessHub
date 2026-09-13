@@ -14,7 +14,7 @@ HarnessHub is a self-hosted Discord control plane for managing local Git workspa
 - ordinary project-channel messages as prompts;
 - compact progress, stop/resume controls, process-crash handling, and restart reconciliation.
 
-Skills, MCP, uploads, provider repository management, model selection, and multi-user operation are deliberately outside this MVP.
+The MVP intentionally started small; the 1.0 path now adds managed Pi packages/skills, model selection, uploads, project lifecycle, job visibility, local Git controls, diagnostics, backup guidance, and Discord-assisted update checks. Native MCP, provider repository creation, and multi-user operation remain later work.
 
 ## Development
 
@@ -55,6 +55,7 @@ Useful operations include `/project status`, `/project archive`, `/project delet
 - `PROJECT.md` — product and architecture source of truth
 - `docs/PROXMOX_VM_GUIDE.md` — complete Proxmox VM installation tutorial
 - `docs/INSTALLATION.md` — concise installer and manual-installation guide
+- `docs/DISCORD_COMMANDS.md` — complete Discord command reference
 - `docs/ROADMAP.md` — vertical milestones
 - `docs/SECURITY.md` — security invariants
 - `docs/DECISIONS.md` — durable decisions

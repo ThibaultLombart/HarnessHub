@@ -1,6 +1,6 @@
 # HarnessHub — Project
 
-> **Status:** MVP product decisions confirmed; implementation has not started.
+> **Status:** MVP implemented and live happy-path validated; 1.0 control-plane features are under active implementation on `feat/resource-management`.
 > **Role:** product and architecture source of truth.
 > **Development contract:** `AGENTS.md`.
 
