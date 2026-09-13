@@ -98,6 +98,9 @@ describe("HarnessHubApplication", () => {
     await app.setProjectModel({ ...actor, channelId: project.channelId }, { model: "fake/model" });
     await app.prompt({ ...actor, channelId: project.channelId, content: "work" }, () => undefined);
     expect(startSession).toHaveBeenCalledWith(expect.objectContaining({ modelPattern: "fake/model" }));
+    expect(app.backupStatus({ ...actor, channelId: "management" })).toContain(
+      "Restore must replace both state",
+    );
     const repair = await app.repairStatus({ ...actor, channelId: project.channelId });
     expect(repair).toContain("No repair needed.");
     const status = await app.projectStatus({ ...actor, channelId: project.channelId });

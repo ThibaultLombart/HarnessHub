@@ -150,6 +150,21 @@ export class HarnessHubApplication {
     );
   }
 
+  public backupStatus(actor: Actor & { channelId: string }): string {
+    this.requireManagementChannel(actor);
+    return [
+      "HarnessHub backup status",
+      `Database: ${this.config.databasePath}`,
+      `State directory: ${path.dirname(this.config.databasePath)}`,
+      `Workspace root: ${this.config.workspaceRoot}`,
+      "Recommended procedure:",
+      "1. sudo systemctl stop harnesshub",
+      "2. back up the state directory and workspace root together",
+      "3. sudo systemctl start harnesshub",
+      "Restore must replace both state and workspaces from the same backup point.",
+    ].join("\n");
+  }
+
   public async repairStatus(actor: Actor & { channelId: string }): Promise<string> {
     this.harness.authorize(actor);
     const workspace = this.requireWorkspace(actor.guildId);

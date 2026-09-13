@@ -68,6 +68,12 @@ const commands = [
     )
     .addSubcommand((command) => command.setName("install").setDescription("Explicitly install Pi")),
   new SlashCommandBuilder()
+    .setName("backup")
+    .setDescription("Show backup and restore guidance")
+    .addSubcommand((command) =>
+      command.setName("status").setDescription("Show what must be backed up together"),
+    ),
+  new SlashCommandBuilder()
     .setName("repair")
     .setDescription("Diagnose degraded HarnessHub mappings")
     .addSubcommand((command) =>
@@ -320,6 +326,10 @@ export class DiscordBot {
           await this.application.installHarness({ ...actor, channelId: interaction.channelId });
           await interaction.editReply("Pi installation completed.");
         }
+      } else if (interaction.commandName === "backup") {
+        await interaction.editReply(
+          this.application.backupStatus({ ...actor, channelId: interaction.channelId }),
+        );
       } else if (interaction.commandName === "repair") {
         await interaction.editReply(
           await this.application.repairStatus({ ...actor, channelId: interaction.channelId }),
