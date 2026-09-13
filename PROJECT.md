@@ -1,7 +1,7 @@
 # HarnessHub — Project
 
-> **Status:** initial vision to refine during the short discovery phase.  
-> **Role:** product and architecture source of truth.  
+> **Status:** MVP product decisions confirmed; implementation has not started.
+> **Role:** product and architecture source of truth.
 > **Development contract:** `AGENTS.md`.
 
 ## 1. Vision
@@ -34,9 +34,9 @@ HarnessHub
 
 ### 2.1 Setup
 
-The user connects HarnessHub to an authorized Discord server.
+The MVP targets one personal Linux VM, one Discord guild, and one administrator. The operator creates the Discord application and token out of band, configures the token, guild ID, administrator user ID, and workspace root locally, then runs HarnessHub as a non-root systemd service.
 
-HarnessHub idempotently creates a workspace category containing at least:
+The administrator runs `/setup`. HarnessHub idempotently creates a workspace category containing at least:
 
 ```text
 HARNESSHUB
@@ -44,7 +44,7 @@ HARNESSHUB
 └── #<project-name>       // created as projects are added
 ```
 
-`#workspace-management` is used for global operations: project creation/import, harness installation/detection, authentication, global skills, global MCP configuration when relevant, system status, and jobs.
+`#workspace-management` is used for global operations: project creation or repository cloning, harness installation/detection, authentication status, system status, and jobs. Skills, MCP configuration, and uploads are post-MVP capabilities.
 
 ### 2.2 Project
 
@@ -103,30 +103,34 @@ The bot executes commands and manipulates credentials, repositories, and files. 
 
 The MVP must provide one complete loop:
 
-1. start HarnessHub on a VM;
-2. connect a Discord server;
-3. create the category and `#workspace-management`;
-4. create a project;
+1. install and start HarnessHub as a non-root systemd service on one Linux VM;
+2. connect the configured Discord guild and administrator;
+3. run `/setup` to create or reuse the category and `#workspace-management`;
+4. create either an empty project or a project cloned from an HTTPS/SSH Git URL;
 5. create its directory and Discord channel;
-6. initialize Git;
+6. initialize Git automatically for an empty project, or preserve the cloned repository;
 7. select Pi as the harness;
-8. detect Pi or install it through an explicit user action;
-9. check authentication status for available providers;
-10. start/resume a Pi session in the correct working directory;
-11. send a prompt from the project channel;
-12. display the answer and useful progress;
-13. survive a HarnessHub restart without losing the project/channel mapping.
+8. detect Pi or install it through an explicit administrator action;
+9. detect native provider authentication already configured for the service account;
+10. start/resume a Pi session with Pi's default model in the exact project directory;
+11. send an ordinary message from the mapped project channel as the first prompt;
+12. display a compact answer and useful progress without token-by-token Discord streaming;
+13. allow the active session to be stopped and reject concurrent prompts with a clear busy response;
+14. survive a HarnessHub restart without losing the project/channel mapping.
+
+MVP repository cloning uses credentials already configured for the non-root service account. HarnessHub rejects credentials embedded in repository URLs and does not accept Git credentials through Discord. Unknown SSH host keys fail with setup guidance rather than being trusted automatically.
 
 ### Included later in V1
 
-- GitHub and GitLab: authentication, repository creation/linking;
+- GitHub through `gh`, followed by GitLab through `glab`: authentication and repository creation/linking;
+- Discord-assisted native provider login;
 - model selection;
 - global and project skills;
-- secure file and ZIP uploads;
+- secure individual file and ZIP uploads;
 - generic MCP support through harness capabilities;
 - compact project dashboard;
 - stronger session/job recovery after crashes;
-- importing existing projects;
+- adopting an existing local directory;
 - a second real `HarnessAdapter` to validate the abstraction.
 
 ### Initially out of scope
@@ -207,7 +211,7 @@ To confirm during discovery unless there is a better reason:
 - structured logger;
 - systemd service for the first Linux installation path.
 
-Secondary library choices remain reversible and must not block discovery.
+These stack and deployment defaults are confirmed for the MVP. Exact supported versions and secondary libraries remain reversible implementation decisions.
 
 ## 7. HarnessAdapter
 
@@ -256,7 +260,7 @@ HarnessHub must be able to:
 - detect the installation and version;
 - explicitly install Pi when the user authorizes it;
 - work inside the exact project directory;
-- use the most stable Pi integration mode for an external UI, with an initial preference for RPC/a separate process;
+- use Pi's RPC mode in a separate supervised process, with strict LF-delimited JSONL framing;
 - send a prompt and receive useful events;
 - identify/preserve a session when Pi supports it;
 - stop a session cleanly;
@@ -268,6 +272,8 @@ Pi-specific details remain confined to `PiAdapter`.
 ## 9. Authentication and models
 
 Goal: prefer **subscriptions and native authentication flows supported by the harness**, rather than building a token-billed API proxy.
+
+For the MVP, the operator authenticates Pi/providers natively under the non-root service account outside Discord. HarnessHub detects and reports that status and uses Pi's existing/default model. Discord-assisted native login and model selection follow after the first complete loop.
 
 Rules:
 
@@ -306,7 +312,11 @@ Git quality is part of the Definition of Done, just like tests.
 When creating a project:
 
 - create the directory atomically/safely;
-- run `git init` if requested or if the final default says so;
+- run `git init` automatically for an empty project;
+- optionally clone an HTTPS/SSH repository URL into the new project;
+- use only credentials already configured for the service account;
+- reject credentials embedded in URLs and never collect Git credentials through Discord;
+- fail safely on unknown SSH host keys and provide setup guidance;
 - never build Git commands by shell-concatenating user input;
 - preserve real errors and provide explicit recovery paths.
 
@@ -436,13 +446,15 @@ At least two levels:
 - HarnessHub administrator: setup, installs, global auth, destructive operations;
 - project user: prompts and authorized project operations.
 
-For personal use, both may initially map to the same Discord user ID, but the boundary must remain explicit.
+The MVP maps both roles to the single configured administrator Discord user ID, while retaining the explicit boundary in application authorization. One Discord guild is supported.
 
 Authorization checks happen in the application layer; hiding a Discord button is not access control.
 
 ## 18. Discord UX
 
 Prefer a compact UX: slash commands for actions, selects/buttons for short choices, edited messages for progress, and the project channel for prompts.
+
+In the MVP, ordinary messages from the authorized user in a mapped project channel become Pi prompts. While Pi is working, another prompt is rejected with a clear busy response rather than queued silently. Stop/resume controls use interactions, and progress is summarized rather than streamed token by token.
 
 Avoid:
 
@@ -471,7 +483,8 @@ After reboot:
 - existing channels are reused;
 - interrupted `running` jobs are reconciled;
 - sessions resume when the harness supports it, otherwise they are marked stopped with an explicit resume action;
-- no duplicate project/channel/process is created automatically.
+- no duplicate project/channel/process is created automatically;
+- a manually missing or renamed mapped channel/directory produces an explicit degraded state and repair action; HarnessHub does not silently recreate, remap, or delete its counterpart.
 
 ## 20. Project-specific quality
 
@@ -486,19 +499,19 @@ In addition to `AGENTS.md`, critical paths should use real integration tests whe
 
 A feature is not validated merely because its Discord handler responds.
 
-## 21. Decisions to confirm during discovery
+## 21. Approval boundary
 
-Ask only questions that materially change the product. Priority:
+An explicit administrator command is sufficient authorization for ordinary HarnessHub operations such as creating or cloning a project and installing Pi. A separate confirmation is required for destructive or hard-to-reverse HarnessHub operations, including deletion, overwrite, public repository creation, and destructive Git actions.
 
-1. strictly personal use or multiple users in V1;
-2. one Discord server or multiple guilds/installations;
-3. Git initialized automatically or opt-in;
-4. remote repository creation during `/project create` or as a separate step;
-5. expected behavior when channels/directories are modified manually;
-6. desired Pi streaming detail inside Discord;
-7. approval rules for installs and potentially destructive commands;
-8. exact MVP scope for skills/uploads/GitHub-GitLab;
-9. preferred workflow for long-running sessions and Pi questions;
-10. host/systemd vs container installation for the first version.
+Commands executed inside Pi sessions follow Pi's own approval configuration. Pi configuration does not authorize privileged operations performed by HarnessHub itself.
 
-Maximum 10 initial questions. Reversible technical details do not justify interrupting the user.
+## 22. Confirmed MVP constraints
+
+- personal, single-administrator use;
+- one configured Discord guild;
+- one non-root Linux VM with systemd;
+- empty project creation and HTTPS/SSH repository cloning;
+- automatic Git initialization for empty projects;
+- Pi first, using pre-existing native authentication and its default model;
+- ordinary project-channel messages as prompts, one active prompt per project;
+- GitHub/GitLab management, skills, MCP, uploads, model selection, and Discord-assisted login deferred until after the first complete loop.

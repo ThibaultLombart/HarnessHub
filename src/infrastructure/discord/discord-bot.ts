@@ -1,0 +1,291 @@
+import {
+  ActionRowBuilder,
+  ButtonBuilder,
+  ButtonStyle,
+  Client,
+  Events,
+  GatewayIntentBits,
+  MessageFlags,
+  SlashCommandBuilder,
+  type ButtonInteraction,
+  type ChatInputCommandInteraction,
+  type Interaction,
+  type Message,
+} from "discord.js";
+import type { Logger } from "pino";
+import type { HarnessHubApplication } from "../../application/application.js";
+import type { HarnessEvent } from "../../domain/harness.js";
+
+const commands = [
+  new SlashCommandBuilder().setName("setup").setDescription("Create or reconnect the HarnessHub workspace"),
+  new SlashCommandBuilder()
+    .setName("project")
+    .setDescription("Manage projects")
+    .addSubcommand((command) =>
+      command
+        .setName("create")
+        .setDescription("Create an empty project or clone a repository")
+        .addStringOption((option) =>
+          option.setName("name").setDescription("Project name").setRequired(true).setMaxLength(100),
+        )
+        .addStringOption((option) =>
+          option
+            .setName("repository")
+            .setDescription("Optional HTTPS or SSH repository URL")
+            .setMaxLength(2048),
+        ),
+    )
+    .addSubcommand((command) => command.setName("status").setDescription("Show the current project status")),
+  new SlashCommandBuilder()
+    .setName("harness")
+    .setDescription("Manage the coding harness")
+    .addSubcommand((command) => command.setName("detect").setDescription("Detect the Pi installation"))
+    .addSubcommand((command) =>
+      command.setName("auth").setDescription("Check native Pi provider authentication"),
+    )
+    .addSubcommand((command) => command.setName("install").setDescription("Explicitly install Pi")),
+  new SlashCommandBuilder()
+    .setName("session")
+    .setDescription("Manage the current project session")
+    .addSubcommand((command) => command.setName("stop").setDescription("Stop the active Pi operation"))
+    .addSubcommand((command) => command.setName("resume").setDescription("Resume the project's Pi session")),
+].map((command) => command.toJSON());
+
+export function createDiscordClient(): Client {
+  return new Client({
+    allowedMentions: { parse: [] },
+    intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMessages, GatewayIntentBits.MessageContent],
+  });
+}
+
+export class DiscordBot {
+  public constructor(
+    private readonly client: Client,
+    private readonly guildId: string,
+    private readonly token: string,
+    private readonly application: HarnessHubApplication,
+    private readonly logger: Logger,
+  ) {}
+
+  public async start(): Promise<void> {
+    this.client.on(Events.InteractionCreate, (interaction) => {
+      void this.handleInteraction(interaction).catch((error: unknown) =>
+        this.logger.error({ error }, "Discord interaction failed"),
+      );
+    });
+    this.client.on(Events.MessageCreate, (message) => {
+      void this.handleMessage(message).catch((error: unknown) =>
+        this.logger.error({ error }, "Discord message handling failed"),
+      );
+    });
+    await this.client.login(this.token);
+    if (!this.client.isReady()) throw new Error("Discord client did not become ready");
+    await this.client.application.commands.set(commands, this.guildId);
+    this.logger.info({ guildId: this.guildId }, "Discord commands registered");
+  }
+
+  public async stop(): Promise<void> {
+    await this.client.destroy();
+  }
+
+  private async handleInteraction(interaction: Interaction): Promise<void> {
+    if (interaction.isChatInputCommand()) await this.handleCommand(interaction);
+    else if (interaction.isButton()) await this.handleButton(interaction);
+  }
+
+  private async handleCommand(interaction: ChatInputCommandInteraction): Promise<void> {
+    const actor = actorFrom(interaction.guildId, interaction.user.id);
+    await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+    try {
+      if (interaction.commandName === "setup") {
+        const workspace = await this.application.setup(actor);
+        await interaction.editReply(`HarnessHub is ready in <#${workspace.managementChannelId}>.`);
+      } else if (interaction.commandName === "project") {
+        const subcommand = interaction.options.getSubcommand();
+        if (subcommand === "create") {
+          const repository = interaction.options.getString("repository") ?? undefined;
+          const project = await this.application.createProject(
+            { ...actor, channelId: interaction.channelId },
+            {
+              name: interaction.options.getString("name", true),
+              ...(repository === undefined ? {} : { repositoryUrl: repository }),
+            },
+          );
+          await interaction.editReply(`Project created: <#${project.channelId}>.`);
+        } else {
+          await interaction.editReply(
+            await this.application.projectStatus({ ...actor, channelId: interaction.channelId }),
+          );
+        }
+      } else if (interaction.commandName === "harness") {
+        const subcommand = interaction.options.getSubcommand();
+        if (subcommand === "detect") {
+          const detection = await this.application.detectHarness({
+            ...actor,
+            channelId: interaction.channelId,
+          });
+          await interaction.editReply(
+            detection.installed
+              ? `Pi ${detection.version ?? "(unknown version)"} is installed.`
+              : "Pi is not installed.",
+          );
+        } else if (subcommand === "auth") {
+          const status = await this.application.getAuthStatus({ ...actor, channelId: interaction.channelId });
+          await interaction.editReply(
+            status.authenticated
+              ? `Pi authentication is available for: ${status.providers.join(", ") || "configured provider"}.`
+              : "Pi has no authenticated model available. Authenticate natively as the service account.",
+          );
+        } else {
+          await this.application.installHarness({ ...actor, channelId: interaction.channelId });
+          await interaction.editReply("Pi installation completed.");
+        }
+      } else if (interaction.commandName === "session") {
+        const project = this.application.projectForChannel({ ...actor, channelId: interaction.channelId });
+        if (interaction.options.getSubcommand() === "stop") {
+          await this.application.stop(actor, project.id);
+          await interaction.editReply("Session stopped.");
+        } else {
+          await this.application.resume(actor, project.id, () => undefined);
+          await interaction.editReply("Session resumed and idle.");
+        }
+      }
+    } catch (error) {
+      this.logger.warn({ error, command: interaction.commandName }, "Discord command was rejected or failed");
+      await interaction.editReply(safeDiscordError(error));
+    }
+  }
+
+  private async handleButton(interaction: ButtonInteraction): Promise<void> {
+    const [namespace, action, projectId] = interaction.customId.split(":");
+    if (namespace !== "hh" || projectId === undefined || (action !== "stop" && action !== "resume")) return;
+    const actor = actorFrom(interaction.guildId, interaction.user.id);
+    await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+    try {
+      if (action === "stop") await this.application.stop(actor, projectId);
+      else await this.application.resume(actor, projectId, () => undefined);
+      await interaction.editReply(action === "stop" ? "Session stopped." : "Session resumed and idle.");
+    } catch (error) {
+      this.logger.warn({ error, action }, "Discord session control failed");
+      await interaction.editReply(safeDiscordError(error));
+    }
+  }
+
+  private async handleMessage(message: Message): Promise<void> {
+    if (message.author.bot || message.guildId === null || message.content.trim() === "") return;
+    const actor = { guildId: message.guildId, userId: message.author.id };
+    let project;
+    try {
+      project = this.application.projectForChannel({ ...actor, channelId: message.channelId });
+    } catch {
+      return;
+    }
+
+    const controls = new ActionRowBuilder<ButtonBuilder>().addComponents(
+      new ButtonBuilder().setCustomId(`hh:stop:${project.id}`).setLabel("Stop").setStyle(ButtonStyle.Danger),
+    );
+    const progress = await message.reply({
+      content: "Pi is working…",
+      components: [controls],
+      allowedMentions: { parse: [] },
+    });
+    let lastStatus = "Pi is working…";
+    let finished = false;
+    let updateChain = Promise.resolve();
+    const onEvent = (event: HarnessEvent): void => {
+      const status = renderEvent(event);
+      if (finished || status === undefined || status === lastStatus) return;
+      lastStatus = status;
+      updateChain = updateChain
+        .then(async () =>
+          progress.edit({ content: status, components: [controls], allowedMentions: { parse: [] } }),
+        )
+        .then(() => undefined)
+        .catch((error: unknown) =>
+          this.logger.warn({ error, projectId: project.id }, "Could not update Discord progress"),
+        );
+    };
+
+    try {
+      const answer = await this.application.prompt(
+        { ...actor, channelId: message.channelId, content: message.content },
+        onEvent,
+      );
+      finished = true;
+      await updateChain;
+      const chunks = splitDiscordMessage(answer);
+      await progress.edit({
+        content: chunks.shift() ?? "Pi completed.",
+        components: [],
+        allowedMentions: { parse: [] },
+      });
+      if (chunks.length > 0 && !message.channel.isSendable())
+        throw new Error("Discord channel is no longer sendable");
+      for (const chunk of chunks) {
+        if (message.channel.isSendable()) {
+          await message.channel.send({ content: chunk, allowedMentions: { parse: [] } });
+        }
+      }
+    } catch (error) {
+      finished = true;
+      this.logger.warn({ error, projectId: project.id }, "Pi prompt failed");
+      await updateChain;
+      await progress.edit({
+        content: safeDiscordError(error),
+        components: [],
+        allowedMentions: { parse: [] },
+      });
+    }
+  }
+}
+
+function actorFrom(guildId: string | null, userId: string): { guildId: string; userId: string } {
+  return { guildId: guildId ?? "", userId };
+}
+
+function renderEvent(event: HarnessEvent): string | undefined {
+  if (event.type === "working") return "Pi is working…";
+  const toolName = "toolName" in event ? event.toolName.replace(/[\r\n\0]/g, " ").slice(0, 80) : "";
+  if (event.type === "tool-start") return `Pi is using ${toolName}…`;
+  if (event.type === "tool-end")
+    return event.failed ? `${toolName} failed; Pi is continuing…` : `Pi finished ${toolName}…`;
+  if (event.type === "failed") return "Pi failed. Check the service logs.";
+  return undefined;
+}
+
+export function splitDiscordMessage(message: string, maximum = 1900): string[] {
+  if (message.length <= maximum) return [message];
+  const chunks: string[] = [];
+  let remaining = message;
+  while (remaining.length > maximum) {
+    const newline = remaining.lastIndexOf("\n", maximum);
+    let splitAt = newline > maximum / 2 ? newline : maximum;
+    if (/^[\uD800-\uDBFF]$/.test(remaining.charAt(splitAt - 1))) splitAt -= 1;
+    chunks.push(remaining.slice(0, splitAt));
+    remaining = remaining.slice(splitAt).replace(/^\n/, "");
+  }
+  if (remaining !== "") chunks.push(remaining);
+  return chunks;
+}
+
+function safeDiscordError(error: unknown): string {
+  if (
+    error instanceof Error &&
+    [
+      "UnauthorizedError",
+      "UnmappedChannelError",
+      "ManagementChannelRequiredError",
+      "ProjectAlreadyExistsError",
+      "ProjectDegradedError",
+      "InvalidProjectInputError",
+      "SessionBusyError",
+      "SessionStoppedError",
+      "WorkspaceDegradedError",
+    ].includes(error.name)
+  ) {
+    return error.message;
+  }
+  if (error instanceof Error && error.message === "Run /setup before creating a project")
+    return error.message;
+  return "Operation failed. Check the redacted HarnessHub service logs.";
+}

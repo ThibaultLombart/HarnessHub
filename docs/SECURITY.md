@@ -33,6 +33,12 @@ Treat as untrusted:
 13. Child processes have explicit lifecycle, timeout/cancellation, and cleanup.
 14. Persistent state must not rely on a PID alone.
 15. Errors returned to Discord must not expose secrets, sensitive internal stacks, or unnecessary private paths.
+16. Repository URLs containing credentials are rejected. Clones use only service-account credentials, and unknown SSH host keys are never accepted automatically.
+17. Pi's internal approval configuration does not authorize privileged HarnessHub operations; destructive or hard-to-reverse HarnessHub actions require their own explicit confirmation.
+
+## MVP isolation limitation
+
+Pi runs as a child of the same non-root service identity as HarnessHub. The systemd unit constrains that identity's host-level writable paths, but Pi is not sandboxed from HarnessHub's own writable database, session, and tool state. The personal MVP must not be exposed to untrusted Discord users or treated as safe execution for hostile repositories. A separate OS identity, container, VM, or policy sandbox is required for a stronger project-to-control-plane boundary.
 
 ## Surfaces requiring the `security` subagent
 
