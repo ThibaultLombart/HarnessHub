@@ -14,6 +14,7 @@ import {
 } from "discord.js";
 import type { Logger } from "pino";
 import type { HarnessHubApplication } from "../../application/application.js";
+import type { Job } from "../database.js";
 import type { HarnessEvent } from "../../domain/harness.js";
 import type { ModelDescriptor } from "../../domain/model.js";
 import type { HarnessResource, ResourceScope } from "../../domain/resource.js";
@@ -66,6 +67,23 @@ const commands = [
       command.setName("auth").setDescription("Check native Pi provider authentication"),
     )
     .addSubcommand((command) => command.setName("install").setDescription("Explicitly install Pi")),
+  new SlashCommandBuilder()
+    .setName("jobs")
+    .setDescription("Inspect HarnessHub long-running jobs")
+    .addSubcommand((command) =>
+      command
+        .setName("list")
+        .setDescription("List recent jobs")
+        .addIntegerOption((option) =>
+          option.setName("limit").setDescription("Number of jobs, 1 to 25").setMinValue(1).setMaxValue(25),
+        ),
+    )
+    .addSubcommand((command) =>
+      command
+        .setName("status")
+        .setDescription("Show a job status")
+        .addStringOption((option) => option.setName("id").setDescription("Full job ID").setRequired(true)),
+    ),
   new SlashCommandBuilder()
     .setName("model")
     .setDescription("View and select the Pi model for a project")
@@ -259,6 +277,26 @@ export class DiscordBot {
           await this.application.installHarness({ ...actor, channelId: interaction.channelId });
           await interaction.editReply("Pi installation completed.");
         }
+      } else if (interaction.commandName === "jobs") {
+        if (interaction.options.getSubcommand() === "status") {
+          await interaction.editReply(
+            formatJob(
+              this.application.jobStatus(
+                { ...actor, channelId: interaction.channelId },
+                interaction.options.getString("id", true),
+              ),
+            ),
+          );
+        } else {
+          await interaction.editReply(
+            formatJobs(
+              this.application.listJobs(
+                { ...actor, channelId: interaction.channelId },
+                interaction.options.getInteger("limit") ?? 10,
+              ),
+            ),
+          );
+        }
       } else if (interaction.commandName === "model") {
         const subcommand = interaction.options.getSubcommand();
         if (subcommand === "list") {
@@ -418,6 +456,26 @@ export class DiscordBot {
 
 function actorFrom(guildId: string | null, userId: string): { guildId: string; userId: string } {
   return { guildId: guildId ?? "", userId };
+}
+
+function formatJobs(jobs: readonly Job[], maximumLength = 1900): string {
+  if (jobs.length === 0) return "No jobs found.";
+  const lines: string[] = [];
+  for (const job of jobs) {
+    const line = formatJob(job);
+    const next = [...lines, line].join("\n");
+    if (next.length > maximumLength) {
+      lines.push(`…and ${String(jobs.length - lines.length)} more job(s).`);
+      break;
+    }
+    lines.push(line);
+  }
+  return lines.join("\n");
+}
+
+function formatJob(job: Job): string {
+  const error = job.safeError === null ? "" : ` — ${job.safeError}`;
+  return `${job.id.slice(0, 8)} ${job.type} [${job.status}] created:${job.createdAt}${error}`;
 }
 
 function formatModels(models: readonly ModelDescriptor[], maximumLength = 1900): string {

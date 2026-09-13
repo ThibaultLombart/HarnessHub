@@ -17,7 +17,7 @@ import { CreateProject } from "./create-project.js";
 import { HarnessHub, UnmappedChannelError, type Actor } from "./harness-hub.js";
 import { ManageResources, type ResourceHarnessPort } from "./manage-resources.js";
 import { SetupWorkspace } from "./setup-workspace.js";
-import type { Database } from "../infrastructure/database.js";
+import type { Database, Job } from "../infrastructure/database.js";
 import type { ProjectFiles } from "../infrastructure/project-files.js";
 
 const executeFile = promisify(execFile);
@@ -140,6 +140,18 @@ export class HarnessHubApplication {
       this.database.projects.delete(project.id);
       return deleted;
     });
+  }
+
+  public listJobs(actor: Actor & { channelId: string }, limit = 10): Job[] {
+    this.requireManagementChannel(actor);
+    return this.database.jobs.listRecent(limit);
+  }
+
+  public jobStatus(actor: Actor & { channelId: string }, id: string): Job {
+    this.requireManagementChannel(actor);
+    const job = this.database.jobs.findById(id);
+    if (job === undefined) throw new Error("Job not found");
+    return job;
   }
 
   public async installResource(

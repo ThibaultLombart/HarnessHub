@@ -147,6 +147,15 @@ export class JobRepository {
     return row === undefined ? undefined : mapJob(row);
   }
 
+  public listRecent(limit = 10): Job[] {
+    const safeLimit = Math.max(1, Math.min(25, Math.floor(limit)));
+    return (
+      this.database
+        .prepare("SELECT * FROM jobs ORDER BY created_at DESC, rowid DESC LIMIT ?")
+        .all(safeLimit) as JobRow[]
+    ).map(mapJob);
+  }
+
   public transition(id: string, target: JobStatus, safeError?: string): Job {
     const current = this.requireById(id);
     transitionJob(current.status, target);

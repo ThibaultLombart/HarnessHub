@@ -160,6 +160,16 @@ describe("Database", () => {
     database.close();
   });
 
+  it("lists recent jobs with a bounded limit", () => {
+    const database = Database.open(temporaryDatabasePath());
+    const first = database.jobs.create({ type: "first" });
+    const second = database.jobs.create({ type: "second" });
+
+    expect(database.jobs.listRecent(1)).toEqual([second]);
+    expect(database.jobs.listRecent(99).map((job) => job.id)).toContain(first.id);
+    database.close();
+  });
+
   it("reconciles interrupted jobs without touching terminal jobs", () => {
     const database = Database.open(temporaryDatabasePath());
     const running = database.jobs.create({ type: "clone" });
