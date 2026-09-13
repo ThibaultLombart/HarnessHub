@@ -7,9 +7,18 @@ export class SessionBusyError extends Error {
 
 export type HarnessEvent =
   | { type: "working" }
+  | { type: "agent-start" }
+  | { type: "turn-start" }
+  | { type: "message-start" }
+  | { type: "message-end" }
   | { type: "settled" }
   | { type: "tool-start"; toolName: string }
+  | { type: "tool-update"; toolName: string }
   | { type: "tool-end"; toolName: string; failed: boolean }
+  | { type: "compaction-start" }
+  | { type: "compaction-end" }
+  | { type: "retry-start" }
+  | { type: "retry-end"; failed: boolean }
   | { type: "failed"; message: string };
 
 export type HarnessCapability = "install" | "authStatus" | "streaming" | "sessionResume";

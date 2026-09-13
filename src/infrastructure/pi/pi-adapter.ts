@@ -84,13 +84,31 @@ export class PiSession {
   }
 
   private handleEvent(event: RpcRecord): void {
-    if (event.type === "agent_settled") {
+    if (event.type === "agent_start") {
+      this.onEvent({ type: "agent-start" });
+    } else if (event.type === "turn_start") {
+      this.onEvent({ type: "turn-start" });
+    } else if (event.type === "message_start") {
+      this.onEvent({ type: "message-start" });
+    } else if (event.type === "message_end") {
+      this.onEvent({ type: "message-end" });
+    } else if (event.type === "agent_settled") {
       this.onEvent({ type: "settled" });
       this.settle?.();
     } else if (event.type === "tool_execution_start" && typeof event.toolName === "string") {
       this.onEvent({ type: "tool-start", toolName: event.toolName });
+    } else if (event.type === "tool_execution_update" && typeof event.toolName === "string") {
+      this.onEvent({ type: "tool-update", toolName: event.toolName });
     } else if (event.type === "tool_execution_end" && typeof event.toolName === "string") {
       this.onEvent({ type: "tool-end", toolName: event.toolName, failed: event.isError === true });
+    } else if (event.type === "compaction_start") {
+      this.onEvent({ type: "compaction-start" });
+    } else if (event.type === "compaction_end") {
+      this.onEvent({ type: "compaction-end" });
+    } else if (event.type === "auto_retry_start" || event.type === "summarization_retry_attempt_start") {
+      this.onEvent({ type: "retry-start" });
+    } else if (event.type === "auto_retry_end" || event.type === "summarization_retry_finished") {
+      this.onEvent({ type: "retry-end", failed: event.success === false });
     } else if (event.type === "process_error") {
       const message = typeof event.error === "string" ? event.error : "Pi process failed";
       this.onEvent({ type: "failed", message });
