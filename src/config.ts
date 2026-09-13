@@ -15,6 +15,7 @@ const environmentSchema = z.object({
   HARNESSHUB_DATABASE_PATH: absolutePath,
   HARNESSHUB_PI_COMMAND: z.string().min(1).default("pi"),
   HARNESSHUB_MAX_CONCURRENT_SESSIONS: z.coerce.number().int().min(1).max(16).default(2),
+  HARNESSHUB_UPDATE_CHECKOUT: absolutePath.optional(),
   LOG_LEVEL: z.enum(["fatal", "error", "warn", "info", "debug", "trace", "silent"]).default("info"),
 });
 
@@ -26,6 +27,7 @@ export type Config = Readonly<{
   databasePath: string;
   piCommand: string;
   maxConcurrentSessions: number;
+  updateCheckout: string;
   logLevel: z.infer<typeof environmentSchema>["LOG_LEVEL"];
 }>;
 
@@ -51,6 +53,7 @@ export function loadConfig(environment: NodeJS.ProcessEnv | Record<string, strin
     databasePath: path.resolve(result.data.HARNESSHUB_DATABASE_PATH),
     piCommand: result.data.HARNESSHUB_PI_COMMAND,
     maxConcurrentSessions: result.data.HARNESSHUB_MAX_CONCURRENT_SESSIONS,
+    updateCheckout: path.resolve(result.data.HARNESSHUB_UPDATE_CHECKOUT ?? process.cwd()),
     logLevel: result.data.LOG_LEVEL,
   };
 }

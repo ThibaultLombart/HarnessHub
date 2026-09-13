@@ -19,6 +19,7 @@ import { GitOperations, type GitProjectStatus } from "./git-operations.js";
 import { HarnessHub, UnmappedChannelError, type Actor } from "./harness-hub.js";
 import { ManageResources, type ResourceHarnessPort } from "./manage-resources.js";
 import { SetupWorkspace } from "./setup-workspace.js";
+import { SystemUpdate, type SystemUpdateStatus } from "./system-update.js";
 import { checkHealth } from "../health.js";
 import type { Database, Job } from "../infrastructure/database.js";
 import type { ProjectFiles } from "../infrastructure/project-files.js";
@@ -69,6 +70,7 @@ export class HarnessHubApplication {
   private readonly createProjectUseCase: CreateProject;
   private readonly manageResources: ManageResources;
   private readonly git = new GitOperations();
+  private readonly updater: SystemUpdate;
 
   public constructor(
     private readonly config: Config,
@@ -89,6 +91,7 @@ export class HarnessHubApplication {
     this.setupWorkspace = new SetupWorkspace(database.workspaces, discord);
     this.createProjectUseCase = new CreateProject(database.projects, files, discord);
     this.manageResources = new ManageResources(database.resources, resourceHarnessPort(adapter));
+    this.updater = new SystemUpdate(config.updateCheckout);
     this.discord = discord;
   }
 
@@ -150,6 +153,20 @@ export class HarnessHubApplication {
       },
       project.id,
     );
+  }
+
+  public async systemUpdateStatus(actor: Actor & { channelId: string }): Promise<SystemUpdateStatus> {
+    this.requireManagementChannel(actor);
+    return this.updater.check();
+  }
+
+  public async applySystemUpdate(
+    actor: Actor & { channelId: string },
+    input: { confirm: string },
+  ): Promise<SystemUpdateStatus> {
+    this.requireManagementChannel(actor);
+    if (input.confirm !== "UPDATE") throw new Error("Type UPDATE to confirm the HarnessHub update");
+    return this.runJob("system-update", () => this.updater.apply());
   }
 
   public async systemStatus(actor: Actor & { channelId: string }): Promise<string> {

@@ -32,6 +32,7 @@ describe("project lifecycle", () => {
       databasePath: path.join(root, "state.sqlite"),
       piCommand: "pi",
       maxConcurrentSessions: 2,
+      updateCheckout: root,
       logLevel: "silent",
     };
     const discord: DiscordResources = {

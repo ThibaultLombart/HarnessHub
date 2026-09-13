@@ -14,6 +14,7 @@ import {
 } from "discord.js";
 import type { Logger } from "pino";
 import type { HarnessHubApplication } from "../../application/application.js";
+import type { SystemUpdateStatus } from "../../application/system-update.js";
 import type { Job } from "../database.js";
 import type { HarnessEvent } from "../../domain/harness.js";
 import type { ModelDescriptor } from "../../domain/model.js";
@@ -69,9 +70,18 @@ const commands = [
     .addSubcommand((command) => command.setName("install").setDescription("Explicitly install Pi")),
   new SlashCommandBuilder()
     .setName("system")
-    .setDescription("Inspect HarnessHub runtime status")
+    .setDescription("Inspect and update HarnessHub")
     .addSubcommand((command) =>
       command.setName("status").setDescription("Show version, health, permissions, and update guidance"),
+    )
+    .addSubcommand((command) => command.setName("update-check").setDescription("Check for Git updates"))
+    .addSubcommand((command) =>
+      command
+        .setName("update-apply")
+        .setDescription("Apply a fast-forward update after explicit confirmation")
+        .addStringOption((option) =>
+          option.setName("confirm").setDescription("Type UPDATE to confirm").setRequired(true),
+        ),
     ),
   new SlashCommandBuilder()
     .setName("mcp")
@@ -339,9 +349,27 @@ export class DiscordBot {
           await interaction.editReply("Pi installation completed.");
         }
       } else if (interaction.commandName === "system") {
-        await interaction.editReply(
-          await this.application.systemStatus({ ...actor, channelId: interaction.channelId }),
-        );
+        const subcommand = interaction.options.getSubcommand();
+        if (subcommand === "update-check") {
+          await interaction.editReply(
+            formatSystemUpdate(
+              await this.application.systemUpdateStatus({ ...actor, channelId: interaction.channelId }),
+            ),
+          );
+        } else if (subcommand === "update-apply") {
+          await interaction.editReply(
+            formatSystemUpdate(
+              await this.application.applySystemUpdate(
+                { ...actor, channelId: interaction.channelId },
+                { confirm: interaction.options.getString("confirm", true) },
+              ),
+            ),
+          );
+        } else {
+          await interaction.editReply(
+            await this.application.systemStatus({ ...actor, channelId: interaction.channelId }),
+          );
+        }
       } else if (interaction.commandName === "mcp") {
         await interaction.editReply(
           this.application.mcpStatus({ ...actor, channelId: interaction.channelId }),
@@ -562,6 +590,19 @@ function actorFrom(guildId: string | null, userId: string): { guildId: string; u
   return { guildId: guildId ?? "", userId };
 }
 
+function formatSystemUpdate(status: SystemUpdateStatus): string {
+  return [
+    "HarnessHub update status",
+    `Checkout: ${status.checkout}`,
+    `Branch: ${status.branch}`,
+    `HEAD: ${status.head.slice(0, 12)}`,
+    `Upstream: ${status.upstream ?? "none"}`,
+    `Upstream HEAD: ${status.upstreamHead?.slice(0, 12) ?? "none"}`,
+    `Working tree: ${status.clean ? "clean" : "dirty"}`,
+    `Update available: ${status.updateAvailable ? "yes" : "no"}`,
+  ].join("\n");
+}
+
 function formatJobs(jobs: readonly Job[], maximumLength = 1900): string {
   if (jobs.length === 0) return "No jobs found.";
   const lines: string[] = [];
@@ -661,6 +702,7 @@ export function safeDiscordError(error: unknown): string {
       "InvalidModelInputError",
       "GitRemoteAlreadyConfiguredError",
       "ModelManagementUnsupportedError",
+      "SystemUpdateBlockedError",
       "ResourceNotFoundError",
       "ResourceProjectRequiredError",
       "ResourceScopeMismatchError",

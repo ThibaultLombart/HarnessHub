@@ -168,6 +168,7 @@ HARNESSHUB_DATABASE_PATH=${STATE_DIR}/harnesshub.sqlite
 HARNESSHUB_PI_COMMAND=pi
 PI_CODING_AGENT_DIR=${STATE_DIR}/pi-agent
 HARNESSHUB_MAX_CONCURRENT_SESSIONS=2
+HARNESSHUB_UPDATE_CHECKOUT=${SOURCE_DIR}
 LOG_LEVEL=info
 EOF
   chown root:"${APP_GROUP}" "${temporary_config}"
@@ -179,6 +180,9 @@ if [[ ! -f "${CONFIG_FILE}" || "${RECONFIGURE}" == true ]]; then
   write_configuration
 else
   printf 'Keeping existing configuration: %s\n' "${CONFIG_FILE}"
+  if ! grep -q '^HARNESSHUB_UPDATE_CHECKOUT=' "${CONFIG_FILE}"; then
+    printf '\nHARNESSHUB_UPDATE_CHECKOUT=%s\n' "${SOURCE_DIR}" >>"${CONFIG_FILE}"
+  fi
   chown root:"${APP_GROUP}" "${CONFIG_FILE}"
   chmod 0640 "${CONFIG_FILE}"
 fi

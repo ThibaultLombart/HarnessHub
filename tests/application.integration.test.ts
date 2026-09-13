@@ -33,6 +33,7 @@ describe("HarnessHubApplication", () => {
       databasePath,
       piCommand: "pi",
       maxConcurrentSessions: 2,
+      updateCheckout: root,
       logLevel: "silent",
     };
     const discord: DiscordResources = {
