@@ -42,9 +42,12 @@ The principal Discord flow is:
 1. `/setup`
 2. `/project create name:<name> [repository:<https-or-ssh-url>]` in `#workspace-management`
 3. `/harness detect` and `/harness auth`
-4. send a normal message in the project channel
-5. optionally manage Pi packages with `/resource add`, `/resource list`, and `/resource remove`
-6. use `/session stop` or `/session resume` when needed
+4. optionally manage Pi packages with `/resource add`, `/resource list`, and `/resource remove`
+5. optionally inspect/select project models with `/model list`, `/model status`, `/model set`, and `/model reset`
+6. send a normal message in the project channel and follow live progress updates
+7. use `/session stop` or `/session resume` when needed
+
+Useful operations include `/project status`, `/project archive`, `/project delete`, `/git status`, `/git link`, `/files upload`, `/jobs list`, `/repair status`, `/backup status`, `/mcp status`, and `/system status`.
 
 ## Project documentation
 
