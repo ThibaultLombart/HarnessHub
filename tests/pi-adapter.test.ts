@@ -54,8 +54,13 @@ describe("PiAdapter", () => {
 
     await expect(session.sendPrompt("Do work")).resolves.toBe("Fake answer");
     expect(session.externalSessionId).toBe("fake-session");
+    expect(onEvent).toHaveBeenCalledWith({ type: "agent-start" });
+    expect(onEvent).toHaveBeenCalledWith({ type: "turn-start" });
+    expect(onEvent).toHaveBeenCalledWith({ type: "message-start" });
     expect(onEvent).toHaveBeenCalledWith({ type: "tool-start", toolName: "read" });
+    expect(onEvent).toHaveBeenCalledWith({ type: "tool-update", toolName: "read" });
     expect(onEvent).toHaveBeenCalledWith({ type: "tool-end", toolName: "read", failed: false });
+    expect(onEvent).toHaveBeenCalledWith({ type: "message-end" });
     await adapter.dispose();
   });
 

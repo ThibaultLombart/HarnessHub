@@ -15,6 +15,10 @@ import {
 import type { Logger } from "pino";
 import type { HarnessHubApplication } from "../../application/application.js";
 import type { HarnessEvent } from "../../domain/harness.js";
+import { SessionProgress } from "../../domain/session-progress.js";
+
+const progressUpdateIntervalMs = 15_000;
+const stalledProgressAfterMs = 120_000;
 
 const commands = [
   new SlashCommandBuilder().setName("setup").setDescription("Create or reconnect the HarnessHub workspace"),
@@ -199,17 +203,19 @@ export class DiscordBot {
     const controls = new ActionRowBuilder<ButtonBuilder>().addComponents(
       new ButtonBuilder().setCustomId(`hh:stop:${project.id}`).setLabel("Stop").setStyle(ButtonStyle.Danger),
     );
+    const tracker = new SessionProgress();
     const progress = await message.reply({
-      content: "Pi is working…",
+      content: tracker.render({ stalledAfterMs: stalledProgressAfterMs }),
       components: [controls],
       allowedMentions: { parse: [] },
     });
-    let lastStatus = "Pi is working…";
+    let lastStatus = tracker.render({ stalledAfterMs: stalledProgressAfterMs });
     let finished = false;
     let updateChain = Promise.resolve();
-    const onEvent = (event: HarnessEvent): void => {
-      const status = renderEvent(event);
-      if (finished || status === undefined || status === lastStatus) return;
+    const scheduleProgressUpdate = (): void => {
+      if (finished) return;
+      const status = tracker.render({ stalledAfterMs: stalledProgressAfterMs });
+      if (status === lastStatus) return;
       lastStatus = status;
       updateChain = updateChain
         .then(async () =>
@@ -220,6 +226,11 @@ export class DiscordBot {
           this.logger.warn({ error, projectId: project.id }, "Could not update Discord progress"),
         );
     };
+    const interval = setInterval(scheduleProgressUpdate, progressUpdateIntervalMs);
+    const onEvent = (event: HarnessEvent): void => {
+      tracker.record(event);
+      scheduleProgressUpdate();
+    };
 
     try {
       const answer = await this.application.prompt(
@@ -227,6 +238,7 @@ export class DiscordBot {
         onEvent,
       );
       finished = true;
+      clearInterval(interval);
       await updateChain;
       const chunks = splitDiscordMessage(answer);
       await progress.edit({
@@ -243,6 +255,7 @@ export class DiscordBot {
       }
     } catch (error) {
       finished = true;
+      clearInterval(interval);
       this.logger.warn({ error, projectId: project.id }, "Pi prompt failed");
       await updateChain;
       await progress.edit({
@@ -256,16 +269,6 @@ export class DiscordBot {
 
 function actorFrom(guildId: string | null, userId: string): { guildId: string; userId: string } {
   return { guildId: guildId ?? "", userId };
-}
-
-function renderEvent(event: HarnessEvent): string | undefined {
-  if (event.type === "working") return "Pi is working…";
-  const toolName = "toolName" in event ? event.toolName.replace(/[\r\n\0]/g, " ").slice(0, 80) : "";
-  if (event.type === "tool-start") return `Pi is using ${toolName}…`;
-  if (event.type === "tool-end")
-    return event.failed ? `${toolName} failed; Pi is continuing…` : `Pi finished ${toolName}…`;
-  if (event.type === "failed") return "Pi failed. Check the service logs.";
-  return undefined;
 }
 
 export function splitDiscordMessage(message: string, maximum = 1900): string[] {

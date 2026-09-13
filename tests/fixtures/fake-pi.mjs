@@ -29,7 +29,11 @@ process.stdin.on("data", (chunk) => {
       });
     } else if (command.type === "prompt") {
       send({ id: command.id, type: "response", command: "prompt", success: true });
+      send({ type: "agent_start" });
+      send({ type: "turn_start" });
+      send({ type: "message_start", message: { role: "assistant" } });
       send({ type: "tool_execution_start", toolName: "read", toolCallId: "tool-1", args: {} });
+      send({ type: "tool_execution_update", toolName: "read", toolCallId: "tool-1", partialResult: {} });
       if (command.message === "crash") {
         process.exit(2);
       } else if (command.message !== "slow") {
@@ -40,6 +44,7 @@ process.stdin.on("data", (chunk) => {
           result: {},
           isError: false,
         });
+        send({ type: "message_end", message: { role: "assistant" } });
         send({ type: "agent_settled" });
       }
     } else if (command.type === "get_last_assistant_text") {
