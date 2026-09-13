@@ -67,3 +67,8 @@ HarnessHub runs one persistent Pi RPC process per active project, with a configu
 **Status: accepted**
 
 The MVP uses `node:sqlite` with Node.js 22.5 or newer instead of a native third-party SQLite addon. This keeps installation reproducible without a compiler toolchain while retaining real SQLite migrations, foreign keys, WAL mode, busy timeout, and transaction boundaries.
+
+## D-013 — The one-command installer does not automate trust decisions
+**Status: accepted**
+
+A local interactive Bash installer performs build validation, non-root account/state creation, protected configuration, local pinned Pi installation, and systemd activation. It does not create the Discord application, install Node.js through an unaudited root-level download, or approve native provider authentication. Existing configuration is preserved by default and application updates retain a timestamped rollback copy.
