@@ -691,6 +691,19 @@ export function safeDiscordError(error: unknown): string {
   if (
     error instanceof Error &&
     [
+      "Uploaded file is too large",
+      "Upload path is invalid",
+      "Upload path must stay inside the project",
+      "Upload path escapes the project through a symlink",
+      "Upload destination already exists",
+      "Could not download Discord attachment",
+    ].includes(error.message)
+  ) {
+    return error.message;
+  }
+  if (
+    error instanceof Error &&
+    [
       "UnauthorizedError",
       "UnmappedChannelError",
       "ManagementChannelRequiredError",
