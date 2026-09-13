@@ -83,6 +83,48 @@ describe("Database", () => {
     database.close();
   });
 
+  it("deletes a project and its dependent state", () => {
+    const database = Database.open(temporaryDatabasePath());
+    const workspace: GuildWorkspace = {
+      id: "workspace",
+      discordGuildId: "guild",
+      categoryId: "category",
+      managementChannelId: "management",
+      workspaceRoot: "/srv/workspaces",
+      createdAt: new Date().toISOString(),
+    };
+    const project: Project = {
+      id: "project",
+      workspaceId: workspace.id,
+      name: "Demo",
+      slug: "demo",
+      channelId: "channel-delete",
+      path: "/srv/workspaces/demo-delete",
+      harnessId: "pi",
+      gitRemote: null,
+      createdAt: new Date().toISOString(),
+      archivedAt: null,
+    };
+    database.workspaces.save(workspace);
+    database.projects.save(project);
+    database.sessions.recordStarted(project.id, "pi", "session");
+    database.modelPreferences.save({ projectId: project.id, provider: "fake", modelId: "model" });
+    database.resources.saveInstalled({
+      harnessId: "pi",
+      type: "package",
+      scope: "project",
+      projectId: project.id,
+      source: "npm:demo",
+    });
+
+    database.projects.delete(project.id);
+
+    expect(database.projects.findById(project.id)).toBeUndefined();
+    expect(database.modelPreferences.findByProject(project.id)).toBeUndefined();
+    expect(database.resources.list({ harnessId: "pi", scope: "project", projectId: project.id })).toEqual([]);
+    database.close();
+  });
+
   it("persists and clears per-project model preferences", () => {
     const database = Database.open(temporaryDatabasePath());
     const workspace: GuildWorkspace = {

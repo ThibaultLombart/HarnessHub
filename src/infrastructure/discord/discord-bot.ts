@@ -41,7 +41,23 @@ const commands = [
             .setMaxLength(2048),
         ),
     )
-    .addSubcommand((command) => command.setName("status").setDescription("Show the current project status")),
+    .addSubcommand((command) => command.setName("status").setDescription("Show the current project status"))
+    .addSubcommand((command) =>
+      command
+        .setName("archive")
+        .setDescription("Archive the current project after explicit slug confirmation")
+        .addStringOption((option) =>
+          option.setName("confirm").setDescription("Type the project slug to confirm").setRequired(true),
+        ),
+    )
+    .addSubcommand((command) =>
+      command
+        .setName("delete")
+        .setDescription("Delete the current project after explicit slug confirmation")
+        .addStringOption((option) =>
+          option.setName("confirm").setDescription("Type the project slug to confirm").setRequired(true),
+        ),
+    ),
   new SlashCommandBuilder()
     .setName("harness")
     .setDescription("Manage the coding harness")
@@ -203,10 +219,22 @@ export class DiscordBot {
             },
           );
           await interaction.editReply(`Project created: <#${project.channelId}>.`);
-        } else {
+        } else if (subcommand === "status") {
           await interaction.editReply(
             await this.application.projectStatus({ ...actor, channelId: interaction.channelId }),
           );
+        } else if (subcommand === "archive") {
+          const project = await this.application.archiveProject(
+            { ...actor, channelId: interaction.channelId },
+            { confirm: interaction.options.getString("confirm", true) },
+          );
+          await interaction.editReply(`Project archived: ${project.slug}.`);
+        } else {
+          const project = await this.application.deleteProject(
+            { ...actor, channelId: interaction.channelId },
+            { confirm: interaction.options.getString("confirm", true) },
+          );
+          await interaction.editReply(`Project deleted: ${project.slug}.`);
         }
       } else if (interaction.commandName === "harness") {
         const subcommand = interaction.options.getSubcommand();
@@ -465,6 +493,7 @@ export function safeDiscordError(error: unknown): string {
       "ManagementChannelRequiredError",
       "ProjectAlreadyExistsError",
       "ProjectDegradedError",
+      "ProjectDeletionBlockedError",
       "InvalidProjectInputError",
       "InvalidResourceInputError",
       "InvalidModelInputError",

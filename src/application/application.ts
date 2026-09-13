@@ -37,6 +37,13 @@ export class ProjectDegradedError extends Error {
   }
 }
 
+export class ProjectDeletionBlockedError extends Error {
+  public constructor(message: string) {
+    super(message);
+    this.name = "ProjectDeletionBlockedError";
+  }
+}
+
 export class ModelManagementUnsupportedError extends Error {
   public constructor() {
     super("The configured harness does not support model management");
@@ -61,7 +68,7 @@ export class HarnessHubApplication {
     private readonly config: Config,
     private readonly database: Database,
     discord: DiscordResources,
-    files: ProjectFiles,
+    private readonly files: ProjectFiles,
     private readonly adapter: HarnessAdapter,
   ) {
     this.harness = new HarnessHub(
@@ -98,6 +105,41 @@ export class HarnessHubApplication {
     return this.runJob("create-project", async () =>
       this.createProjectUseCase.execute({ workspace, ...input }),
     );
+  }
+
+  public async archiveProject(
+    actor: Actor & { channelId: string },
+    input: { confirm: string },
+  ): Promise<Project> {
+    const project = this.projectForChannel(actor);
+    if (input.confirm !== project.slug)
+      throw new ProjectDeletionBlockedError("Type the project slug to confirm archival");
+    await this.harness.stop(actor, project.id);
+    return this.runJob("archive-project", () => this.database.projects.archive(project.id));
+  }
+
+  public async deleteProject(
+    actor: Actor & { channelId: string },
+    input: { confirm: string },
+  ): Promise<Project> {
+    const project = this.projectForChannel(actor);
+    if (input.confirm !== project.slug)
+      throw new ProjectDeletionBlockedError("Type the project slug to confirm deletion");
+    const latest = this.database.sessions.findLatestByProject(project.id);
+    if (latest !== undefined && ["starting", "working", "stopping"].includes(latest.status)) {
+      throw new ProjectDeletionBlockedError("Stop the active session before deleting this project");
+    }
+    if (await isGitDirty(project.path)) {
+      throw new ProjectDeletionBlockedError("Refusing to delete a project with uncommitted Git changes");
+    }
+    await this.harness.stop(actor, project.id);
+    return this.runJob("delete-project", async () => {
+      const deleted = this.database.projects.archive(project.id);
+      await this.discord.deleteProjectChannel(project.channelId);
+      await this.files.removeProject(project.path);
+      this.database.projects.delete(project.id);
+      return deleted;
+    });
   }
 
   public async installResource(
@@ -310,7 +352,7 @@ export class HarnessHubApplication {
     return workspace;
   }
 
-  private async runJob<T>(type: string, operation: () => Promise<T>): Promise<T> {
+  private async runJob<T>(type: string, operation: () => T | Promise<T>): Promise<T> {
     const job = this.database.jobs.create({ type });
     this.database.jobs.transition(job.id, "running");
     try {
@@ -339,6 +381,15 @@ async function isSafeProjectDirectory(target: string, canonicalRoot: string): Pr
   } catch (error) {
     if (error instanceof Error && "code" in error && error.code === "ENOENT") return false;
     throw error;
+  }
+}
+
+async function isGitDirty(cwd: string): Promise<boolean> {
+  try {
+    const result = await executeFile("git", ["-C", cwd, "status", "--porcelain"], { timeout: 10_000 });
+    return result.stdout !== "";
+  } catch {
+    return false;
   }
 }
 
@@ -373,5 +424,6 @@ function safeJobError(error: unknown): string {
   if (error instanceof ManagementChannelRequiredError || error instanceof UnmappedChannelError)
     return error.message;
   if (error instanceof Error && error.name === "InvalidResourceInputError") return error.message;
+  if (error instanceof Error && error.name === "ProjectDeletionBlockedError") return error.message;
   return "Operation failed; inspect the redacted service logs";
 }

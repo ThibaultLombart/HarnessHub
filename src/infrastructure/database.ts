@@ -242,6 +242,24 @@ export class ProjectRepository {
         project.archivedAt,
       );
   }
+
+  public archive(id: string): Project {
+    const now = new Date().toISOString();
+    this.database
+      .prepare("UPDATE projects SET archived_at = ? WHERE id = ? AND archived_at IS NULL")
+      .run(now, id);
+    const project = this.findById(id);
+    if (project === undefined) throw new Error(`Project not found: ${id}`);
+    return project;
+  }
+
+  public delete(id: string): void {
+    this.database.prepare("DELETE FROM project_model_preferences WHERE project_id = ?").run(id);
+    this.database.prepare("DELETE FROM harness_resources WHERE project_id = ?").run(id);
+    this.database.prepare("DELETE FROM harness_sessions WHERE project_id = ?").run(id);
+    this.database.prepare("DELETE FROM jobs WHERE project_id = ?").run(id);
+    this.database.prepare("DELETE FROM projects WHERE id = ?").run(id);
+  }
 }
 
 export class HarnessInstallationRepository {
