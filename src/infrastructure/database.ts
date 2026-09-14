@@ -240,6 +240,13 @@ export class ProjectRepository {
     return row === undefined ? undefined : mapProject(row);
   }
 
+  public listActive(): readonly Project[] {
+    const rows = this.database
+      .prepare("SELECT * FROM projects WHERE archived_at IS NULL ORDER BY created_at, id")
+      .all() as Record<string, unknown>[];
+    return rows.map(mapProject);
+  }
+
   public save(project: Project): void {
     this.database
       .prepare(

@@ -18,6 +18,11 @@ import { CreateProject } from "./create-project.js";
 import { GitOperations, type GitProjectStatus } from "./git-operations.js";
 import { HarnessHub, UnmappedChannelError, type Actor } from "./harness-hub.js";
 import { ManageResources, type ResourceHarnessPort } from "./manage-resources.js";
+import {
+  projectStatusFromSession,
+  type ProjectStatusIndicators,
+  type ProjectWorkStatus,
+} from "./project-status.js";
 import { SetupWorkspace } from "./setup-workspace.js";
 import { SystemUpdate, type SystemUpdateStatus } from "./system-update.js";
 import { checkHealth } from "../health.js";
@@ -30,6 +35,7 @@ export type DiscordResources = {
   ensureWorkspace(guildId: string): Promise<{ categoryId: string; managementChannelId: string }>;
   workspaceExists(workspace: GuildWorkspace): Promise<boolean>;
   createProjectChannel(workspace: GuildWorkspace, slug: string): Promise<string>;
+  updateProjectChannelStatus(project: Project, status: ProjectWorkStatus): Promise<void>;
   deleteProjectChannel(channelId: string): Promise<void>;
   projectChannelMatches(channelId: string, expectedSlug: string, categoryId: string): Promise<boolean>;
 };
@@ -78,6 +84,9 @@ export class HarnessHubApplication {
     discord: DiscordResources,
     private readonly files: ProjectFiles,
     private readonly adapter: HarnessAdapter,
+    private readonly projectStatuses: Pick<ProjectStatusIndicators, "update"> = {
+      update: () => Promise.resolve(),
+    },
   ) {
     this.harness = new HarnessHub(
       { guildId: config.discordGuildId, administratorId: config.discordAdminUserId },
@@ -124,6 +133,7 @@ export class HarnessHubApplication {
     if (input.confirm !== project.slug)
       throw new ProjectDeletionBlockedError("Type the project slug to confirm archival");
     await this.harness.stop(actor, project.id);
+    await this.projectStatuses.update(project, "blocked");
     return this.runJob("archive-project", () => this.database.projects.archive(project.id), project.id);
   }
 
@@ -447,14 +457,30 @@ export class HarnessHubApplication {
     onEvent: (event: HarnessEvent) => void,
   ): Promise<string> {
     const project = this.projectForChannel(actor);
-    if (!(await this.projectResourcesMatch(project))) throw new ProjectDegradedError();
-    const answer = await this.harness.prompt(actor, onEvent);
-    if (!(await this.projectResourcesMatch(project))) throw new ProjectDegradedError();
-    return answer;
+    if (!(await this.projectResourcesMatch(project))) {
+      await this.projectStatuses.update(project, "blocked");
+      throw new ProjectDegradedError();
+    }
+    await this.projectStatuses.update(project, "working");
+    try {
+      const answer = await this.harness.prompt(actor, onEvent);
+      if (!(await this.projectResourcesMatch(project))) throw new ProjectDegradedError();
+      await this.projectStatuses.update(project, "idle");
+      return answer;
+    } catch (error) {
+      const session = this.database.sessions.findLatestByProject(project.id);
+      const status = projectStatusFromSession(session?.status) === "working" ? "working" : "blocked";
+      await this.projectStatuses.update(project, status);
+      throw error;
+    }
   }
 
   public async stop(actor: Actor, projectId: string): Promise<void> {
+    this.harness.authorize(actor);
+    const project = this.database.projects.findById(projectId);
+    if (project === undefined) throw new Error("Project not found");
     await this.harness.stop(actor, projectId);
+    await this.projectStatuses.update(project, "blocked");
   }
 
   public async resume(
@@ -465,8 +491,18 @@ export class HarnessHubApplication {
     this.harness.authorize(actor);
     const project = this.database.projects.findById(projectId);
     if (project === undefined) throw new Error("Project not found");
-    if (!(await this.projectResourcesMatch(project))) throw new ProjectDegradedError();
-    await this.harness.resume(actor, projectId, onEvent);
+    if (!(await this.projectResourcesMatch(project))) {
+      await this.projectStatuses.update(project, "blocked");
+      throw new ProjectDegradedError();
+    }
+    await this.projectStatuses.update(project, "working");
+    try {
+      await this.harness.resume(actor, projectId, onEvent);
+      await this.projectStatuses.update(project, "idle");
+    } catch (error) {
+      await this.projectStatuses.update(project, "blocked");
+      throw error;
+    }
   }
 
   public projectForChannel(actor: Actor & { channelId: string }): Project {

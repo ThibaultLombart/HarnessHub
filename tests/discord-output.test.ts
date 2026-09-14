@@ -14,6 +14,15 @@ describe("splitDiscordMessage", () => {
     expect(chunks[0]).toBe("1234");
   });
 
+  it("renders safe upload errors", () => {
+    expect(safeDiscordError(new Error("Upload destination already exists"))).toBe(
+      "Upload destination already exists",
+    );
+    expect(safeDiscordError(new Error("Upload path must stay inside the project"))).toBe(
+      "Upload path must stay inside the project",
+    );
+  });
+
   it("renders safe resource management errors", () => {
     expect(safeDiscordError(new ResourceProjectRequiredError())).toBe(
       "This resource operation requires a project channel",

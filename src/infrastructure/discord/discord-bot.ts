@@ -246,6 +246,7 @@ export class DiscordBot {
     private readonly token: string,
     private readonly application: HarnessHubApplication,
     private readonly logger: Logger,
+    private readonly refreshProviderUsage?: () => Promise<void>,
   ) {}
 
   public async start(): Promise<void> {
@@ -296,6 +297,7 @@ export class DiscordBot {
       if (interaction.commandName === "setup") {
         const workspace = await this.application.setup(actor);
         await interaction.editReply(`HarnessHub is ready in <#${workspace.managementChannelId}>.`);
+        this.triggerProviderUsageRefresh();
       } else if (interaction.commandName === "project") {
         const subcommand = interaction.options.getSubcommand();
         if (subcommand === "create") {
@@ -582,7 +584,16 @@ export class DiscordBot {
         components: [],
         allowedMentions: { parse: [] },
       });
+    } finally {
+      this.triggerProviderUsageRefresh();
     }
+  }
+
+  private triggerProviderUsageRefresh(): void {
+    if (this.refreshProviderUsage === undefined) return;
+    void this.refreshProviderUsage().catch((error: unknown) => {
+      this.logger.warn({ error }, "Could not trigger provider usage refresh");
+    });
   }
 }
 
@@ -688,6 +699,19 @@ export function splitDiscordMessage(message: string, maximum = 1900): string[] {
 export function safeDiscordError(error: unknown): string {
   if (error instanceof Error && "code" in error && error.code === 50_013)
     return "HarnessHub needs the Discord permissions Manage Channels and Manage Roles to set up its private workspace.";
+  if (
+    error instanceof Error &&
+    [
+      "Uploaded file is too large",
+      "Upload path is invalid",
+      "Upload path must stay inside the project",
+      "Upload path escapes the project through a symlink",
+      "Upload destination already exists",
+      "Could not download Discord attachment",
+    ].includes(error.message)
+  ) {
+    return error.message;
+  }
   if (
     error instanceof Error &&
     [

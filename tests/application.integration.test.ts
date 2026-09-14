@@ -3,7 +3,9 @@ import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { HarnessHubApplication, type DiscordResources } from "../src/application/application.js";
+import type { ProjectWorkStatus } from "../src/application/project-status.js";
 import type { Config } from "../src/config.js";
+import type { Project } from "../src/domain/project.js";
 import type { HarnessAdapter } from "../src/domain/harness.js";
 import { Database } from "../src/infrastructure/database.js";
 import { ProjectFiles } from "../src/infrastructure/project-files.js";
@@ -32,6 +34,7 @@ describe("HarnessHubApplication", () => {
       workspaceRoot,
       databasePath,
       piCommand: "pi",
+      piAgentDirectory: path.join(root, "pi-agent"),
       maxConcurrentSessions: 2,
       updateCheckout: root,
       logLevel: "silent",
@@ -40,6 +43,7 @@ describe("HarnessHubApplication", () => {
       ensureWorkspace: vi.fn(async () => ({ categoryId: "category", managementChannelId: "management" })),
       workspaceExists: vi.fn(async () => true),
       createProjectChannel: vi.fn(async () => "project-channel"),
+      updateProjectChannelStatus: vi.fn(async () => undefined),
       deleteProjectChannel: vi.fn(async () => undefined),
       projectChannelMatches: vi.fn(async () => true),
     };
@@ -47,10 +51,11 @@ describe("HarnessHubApplication", () => {
     const installPackageResource = vi.fn(async () => undefined);
     const removePackageResource = vi.fn(async () => undefined);
     const listModels = vi.fn(async () => [{ provider: "fake", id: "model", label: "fake/model" }]);
+    const sendPrompt = vi.fn(async () => "answer");
     const startSession = vi.fn(async () => ({
       externalSessionId: "session",
       isBusy: false,
-      sendPrompt: async () => "answer",
+      sendPrompt,
       stop: async () => undefined,
       close: async () => undefined,
     }));
@@ -69,12 +74,16 @@ describe("HarnessHubApplication", () => {
       dispose: async () => undefined,
     };
     const first = Database.open(databasePath);
+    const updateProjectStatus = vi.fn<(project: Project, status: ProjectWorkStatus) => Promise<void>>(() =>
+      Promise.resolve(),
+    );
     const app = new HarnessHubApplication(
       config,
       first,
       discord,
       await ProjectFiles.create(workspaceRoot),
       adapter,
+      { update: updateProjectStatus },
     );
     const actor = { guildId: config.discordGuildId, userId: config.discordAdminUserId };
 
@@ -99,6 +108,12 @@ describe("HarnessHubApplication", () => {
     await app.setProjectModel({ ...actor, channelId: project.channelId }, { model: "fake/model" });
     await app.prompt({ ...actor, channelId: project.channelId, content: "work" }, () => undefined);
     expect(startSession).toHaveBeenCalledWith(expect.objectContaining({ modelPattern: "fake/model" }));
+    expect(updateProjectStatus.mock.calls.map((call) => call[1])).toEqual(["working", "idle"]);
+    sendPrompt.mockRejectedValueOnce(new Error("provider failed"));
+    await expect(
+      app.prompt({ ...actor, channelId: project.channelId, content: "fail" }, () => undefined),
+    ).rejects.toThrow("provider failed");
+    expect(updateProjectStatus.mock.calls.slice(-2).map((call) => call[1])).toEqual(["working", "blocked"]);
     await expect(app.systemStatus({ ...actor, channelId: "management" })).resolves.toContain("Version:");
     expect(app.mcpStatus({ ...actor, channelId: "management" })).toContain("Pi: no native MCP");
     expect(app.backupStatus({ ...actor, channelId: "management" })).toContain(

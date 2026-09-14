@@ -28,6 +28,8 @@ Run in `#workspace-management`. Creates a local project directory and Discord pr
 
 Repository URLs with embedded credentials, query parameters, fragments, unsupported protocols, or shell-like unsafe prefixes are rejected. SSH host keys must already be trusted by the service account.
 
+Project channel names carry a status suffix: `🟢` means idle/available, `🟡` means Pi is working, and `🔴` means the last session failed, was stopped, or the project needs intervention. A successful prompt or resume returns the channel to green. Status rename failures are logged but never block project work.
+
 ### `/project status`
 
 Run in a project channel. Shows a compact dashboard:

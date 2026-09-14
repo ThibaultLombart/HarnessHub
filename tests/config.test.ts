@@ -17,6 +17,7 @@ describe("loadConfig", () => {
     expect(config.logLevel).toBe("info");
     expect(config.maxConcurrentSessions).toBe(2);
     expect(config.piCommand).toBe("pi");
+    expect(config.piAgentDirectory).toBe(path.resolve("state", "pi-agent"));
   });
 
   it("rejects relative persistent paths", () => {
