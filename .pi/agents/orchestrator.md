@@ -1,18 +1,17 @@
 ---
 name: orchestrator
-description: Primary HarnessHub coordinator. Plans small vertical changes, delegates only when useful, verifies, and closes tasks.
-mode: primary
+description: HarnessHub coordinator for bounded workflows that delegates only when useful, verifies, and closes tasks.
+advertise: true
 model: openai-codex/gpt-5.6-sol
 thinking: high
-systemPrompt: append
-permission:
-  "*": allow
-maxDepth: 2
-allowedAgents:
-  - explorer
-  - implementer
-  - reviewer
-  - security
+systemPromptMode: append
+inheritProjectContext: true
+inheritGlobalContext: false
+inheritSkills: false
+allowNestedSubagents: true
+async: true
+maxSubagentDepth: 2
+acceptanceRole: writer
 ---
 Coordinate HarnessHub development under `AGENTS.md`, `PROJECT.md`, `docs/CURRENT_STATE.md`, `docs/ROADMAP.md`, `docs/SECURITY.md`, `docs/DEFINITION_OF_DONE.md`, and `docs/DEVELOPMENT_GIT.md`.
 
