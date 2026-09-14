@@ -25,6 +25,13 @@ export class UnauthorizedError extends Error {
   }
 }
 
+export class SessionRestartUnsupportedError extends Error {
+  public constructor() {
+    super("The configured harness does not support process restart");
+    this.name = "SessionRestartUnsupportedError";
+  }
+}
+
 export class UnmappedChannelError extends Error {
   public constructor() {
     super("This Discord channel is not mapped to a HarnessHub project");
@@ -106,6 +113,20 @@ export class HarnessHub {
     if (this.repositories.projects.findById(projectId) === undefined) throw new Error("Project not found");
     await this.adapter.stopSession(projectId);
     this.repositories.sessions.updateStatus(projectId, "stopped");
+  }
+
+  public async restart(
+    actor: Actor,
+    projectId: string,
+    onEvent: (event: HarnessEvent) => void,
+  ): Promise<void> {
+    this.authorize(actor);
+    if (this.repositories.projects.findById(projectId) === undefined) throw new Error("Project not found");
+    if (this.adapter.getSession(projectId)?.isBusy === true) throw new SessionBusyError();
+    if (this.adapter.restartSession === undefined) throw new SessionRestartUnsupportedError();
+    await this.adapter.restartSession(projectId);
+    this.repositories.sessions.updateStatus(projectId, "stopped");
+    await this.resume(actor, projectId, onEvent);
   }
 
   public async resume(

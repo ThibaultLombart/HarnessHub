@@ -25,7 +25,7 @@ export type HarnessEvent =
   | { type: "retry-end"; failed: boolean }
   | { type: "failed"; message: string };
 
-export type HarnessCapability = "install" | "authStatus" | "streaming" | "sessionResume";
+export type HarnessCapability = "install" | "authStatus" | "streaming" | "sessionResume" | "sessionRestart";
 
 export type HarnessSession = {
   readonly externalSessionId: string;
@@ -51,6 +51,7 @@ export type HarnessAdapter = {
   }): Promise<HarnessSession>;
   getSession(projectId: string): HarnessSession | undefined;
   stopSession(projectId: string): Promise<void>;
+  restartSession?(projectId: string): Promise<void>;
   installPackageResource?(input: { scope: ResourceScope; cwd: string; source: string }): Promise<void>;
   removePackageResource?(input: { scope: ResourceScope; cwd: string; source: string }): Promise<void>;
   listModels?(cwd: string): Promise<readonly ModelDescriptor[]>;

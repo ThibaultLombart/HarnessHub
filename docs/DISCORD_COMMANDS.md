@@ -74,6 +74,10 @@ Stops the active Pi operation for the current project. Safe to repeat.
 
 Starts/resumes the Pi session for the current project and leaves it idle.
 
+### `/session restart confirm:RESTART`
+
+Rare maintenance operation for a project channel. It refuses while a prompt is active, closes the actual Pi process, preserves the persisted conversation, starts a new Pi RPC process, and reloads installed packages, extensions, agents, and model configuration. The literal confirmation prevents accidental restarts. Use `/session stop` first when Pi is working.
+
 ## Resources, skills, and packages
 
 ### `/resource add scope:<global|project> source:<source>`

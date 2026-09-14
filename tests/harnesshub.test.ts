@@ -38,6 +38,7 @@ function subject(busy = false) {
     startSession: vi.fn(async () => session),
     getSession: vi.fn(() => undefined),
     stopSession: vi.fn(async () => undefined),
+    restartSession: vi.fn(async () => undefined),
     dispose: vi.fn(async () => undefined),
   };
   const repositories: HarnessHubRepositories = {
@@ -111,6 +112,24 @@ describe("HarnessHub application authorization and prompting", () => {
 
     expect(adapter.stopSession).toHaveBeenCalledWith(project.id);
     expect(repositories.sessions.updateStatus).toHaveBeenCalledWith(project.id, "stopped");
+  });
+
+  it("restarts the Pi process before resuming the persisted project session", async () => {
+    const { hub, adapter, repositories } = subject();
+    const actor = { guildId: "guild", userId: "admin" };
+    vi.mocked(repositories.sessions.findLatestByProject).mockReturnValue({
+      externalSessionId: "persisted-session",
+      status: "stopped",
+    });
+
+    await hub.restart(actor, project.id, vi.fn());
+
+    expect(adapter.restartSession).toHaveBeenCalledWith(project.id);
+    expect(adapter.startSession).toHaveBeenCalledWith(
+      expect.objectContaining({ projectId: project.id, externalSessionId: "persisted-session" }),
+    );
+    expect(repositories.sessions.updateStatus).toHaveBeenCalledWith(project.id, "stopped");
+    expect(repositories.sessions.updateStatus).toHaveBeenLastCalledWith(project.id, "idle");
   });
 
   it("ignores unmapped channels explicitly", async () => {

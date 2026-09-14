@@ -179,6 +179,46 @@ describe("PiAdapter", () => {
     await adapter.dispose();
   });
 
+  it("closes an idle Pi process so the next start reloads extensions", async () => {
+    const adapter = new PiAdapter({
+      command: process.execPath,
+      commandArguments: [fixture],
+      sessionRoot: temporaryDirectory(),
+      maxSessions: 2,
+    });
+    const input = { projectId: "restart", cwd: temporaryDirectory(), name: "restart", onEvent: vi.fn() };
+    const first = await adapter.startSession(input);
+
+    await adapter.restartSession("restart");
+    const second = await adapter.startSession(input);
+
+    expect(second).not.toBe(first);
+    await adapter.dispose();
+  });
+
+  it("refuses to restart a Pi process while its prompt is active", async () => {
+    const adapter = new PiAdapter({
+      command: process.execPath,
+      commandArguments: [fixture],
+      sessionRoot: temporaryDirectory(),
+      maxSessions: 2,
+    });
+    const session = await adapter.startSession({
+      projectId: "busy-restart",
+      cwd: temporaryDirectory(),
+      name: "busy-restart",
+      onEvent: vi.fn(),
+    });
+    const prompt = session.sendPrompt("slow");
+    const stopped = expect(prompt).rejects.toThrow(/stopped/i);
+    await new Promise((resolve) => setTimeout(resolve, 25));
+
+    await expect(adapter.restartSession("busy-restart")).rejects.toThrow(SessionBusyError);
+    await session.stop();
+    await stopped;
+    await adapter.dispose();
+  });
+
   it("stops an active operation idempotently", async () => {
     const adapter = new PiAdapter({
       command: process.execPath,

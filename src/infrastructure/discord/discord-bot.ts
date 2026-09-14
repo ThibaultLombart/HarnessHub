@@ -24,7 +24,7 @@ import { SessionProgress } from "../../domain/session-progress.js";
 const progressUpdateIntervalMs = 15_000;
 const stalledProgressAfterMs = 120_000;
 
-const commands = [
+export const commands = [
   new SlashCommandBuilder().setName("setup").setDescription("Create or reconnect the HarnessHub workspace"),
   new SlashCommandBuilder()
     .setName("project")
@@ -229,7 +229,15 @@ const commands = [
     .setName("session")
     .setDescription("Manage the current project session")
     .addSubcommand((command) => command.setName("stop").setDescription("Stop the active Pi operation"))
-    .addSubcommand((command) => command.setName("resume").setDescription("Resume the project's Pi session")),
+    .addSubcommand((command) => command.setName("resume").setDescription("Resume the project's Pi session"))
+    .addSubcommand((command) =>
+      command
+        .setName("restart")
+        .setDescription("Rare: restart the Pi process and reload packages")
+        .addStringOption((option) =>
+          option.setName("confirm").setDescription("Type RESTART").setRequired(true).setMaxLength(7),
+        ),
+    ),
 ].map((command) => command.toJSON());
 
 export function createDiscordClient(): Client {
@@ -481,10 +489,19 @@ export class DiscordBot {
           await interaction.editReply(formatResources(resources));
         }
       } else if (interaction.commandName === "session") {
-        const project = this.application.projectForChannel({ ...actor, channelId: interaction.channelId });
-        if (interaction.options.getSubcommand() === "stop") {
+        const sessionActor = { ...actor, channelId: interaction.channelId };
+        const project = this.application.projectForChannel(sessionActor);
+        const subcommand = interaction.options.getSubcommand();
+        if (subcommand === "stop") {
           await this.application.stop(actor, project.id);
           await interaction.editReply("Session stopped.");
+        } else if (subcommand === "restart") {
+          await this.application.restartProjectSession(
+            sessionActor,
+            { confirm: interaction.options.getString("confirm", true) },
+            () => undefined,
+          );
+          await interaction.editReply("Pi process restarted; packages and extensions were reloaded.");
         } else {
           await this.application.resume(actor, project.id, () => undefined);
           await interaction.editReply("Session resumed and idle.");
@@ -755,6 +772,8 @@ export function safeDiscordError(error: unknown): string {
       "ResourceScopeMismatchError",
       "SessionBusyError",
       "SessionStoppedError",
+      "SessionRestartConfirmationError",
+      "SessionRestartUnsupportedError",
       "WorkspaceDegradedError",
     ].includes(error.name)
   ) {
