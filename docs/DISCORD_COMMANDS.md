@@ -64,7 +64,7 @@ Safety rules:
 
 A non-empty message in a mapped project channel becomes a Pi prompt. HarnessHub starts or resumes Pi in the exact project directory. Concurrent prompts for the same project are rejected with a clear busy response.
 
-The progress message shows the current observable Pi phase, current tool, recent tools, elapsed time, last Pi event age, and a possible-stall warning when Pi emits no event for a while. HarnessHub does not stream every token to Discord.
+The progress message shows the current observable Pi phase, current tool, recent tools, elapsed time, last Pi event age, and a possible-stall warning when Pi emits no event for a while. Every progress, completion, continuation, and safe-error message ends with `Model used: provider/model-id`; before a new default-model session reports its state, the initial value may briefly read `Pi default`. HarnessHub does not stream every token to Discord.
 
 ### `/session stop`
 

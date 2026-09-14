@@ -27,6 +27,7 @@ export class PiSession {
     public readonly projectId: string,
     private readonly client: PiRpcClient,
     externalSessionId: string,
+    private currentModel: Readonly<{ provider: string; id: string }> | null,
     private onEvent: (event: HarnessEvent) => void,
     private readonly onProcessFailure: () => void,
   ) {
@@ -36,6 +37,10 @@ export class PiSession {
 
   public get isBusy(): boolean {
     return this.busy;
+  }
+
+  public get model(): Readonly<{ provider: string; id: string }> | null {
+    return this.currentModel;
   }
 
   public setEventHandler(onEvent: (event: HarnessEvent) => void): void {
@@ -70,6 +75,7 @@ export class PiSession {
 
   public async setModel(provider: string, modelId: string): Promise<void> {
     await this.client.command("set_model", { provider, modelId }, 30_000);
+    this.currentModel = { provider, id: modelId };
   }
 
   public async stop(): Promise<void> {
@@ -298,7 +304,12 @@ export class PiAdapter {
       const data = objectValue(response.data);
       if (typeof data.sessionId !== "string" || data.sessionId === "")
         throw new Error("Pi did not provide a session ID");
-      const session = new PiSession(input.projectId, client, data.sessionId, input.onEvent, () => {
+      const stateModel = objectValue(data.model);
+      const model =
+        typeof stateModel.provider === "string" && typeof stateModel.id === "string"
+          ? { provider: stateModel.provider, id: stateModel.id }
+          : null;
+      const session = new PiSession(input.projectId, client, data.sessionId, model, input.onEvent, () => {
         if (this.sessions.get(input.projectId) === session) this.sessions.delete(input.projectId);
       });
       this.sessions.set(input.projectId, session);

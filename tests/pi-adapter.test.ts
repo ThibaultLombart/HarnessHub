@@ -85,7 +85,7 @@ describe("PiAdapter", () => {
       sessionRoot: temporaryDirectory(),
       maxSessions: 2,
     });
-    await adapter.startSession({
+    const session = await adapter.startSession({
       projectId: "model",
       cwd: temporaryDirectory(),
       name: "model",
@@ -93,6 +93,7 @@ describe("PiAdapter", () => {
     });
 
     await expect(adapter.setSessionModel("model", "fake", "model")).resolves.toBeUndefined();
+    expect(session.model).toEqual({ provider: "fake", id: "model" });
     await adapter.dispose();
   });
 
@@ -109,6 +110,7 @@ describe("PiAdapter", () => {
 
     await expect(session.sendPrompt("Do work")).resolves.toBe("Fake answer");
     expect(session.externalSessionId).toBe("fake-session");
+    expect(session.model).toEqual({ provider: "fake", id: "model" });
     expect(onEvent).toHaveBeenCalledWith({ type: "agent-start" });
     expect(onEvent).toHaveBeenCalledWith({ type: "turn-start" });
     expect(onEvent).toHaveBeenCalledWith({ type: "message-start" });

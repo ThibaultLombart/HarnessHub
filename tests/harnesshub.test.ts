@@ -25,6 +25,7 @@ function subject(busy = false) {
   const session: HarnessSession = {
     externalSessionId: "session",
     isBusy: busy,
+    model: { provider: "fake", id: "model" },
     sendPrompt: vi.fn(async () => "answer"),
     stop: vi.fn(async () => undefined),
     close: vi.fn(async () => undefined),
@@ -74,6 +75,7 @@ describe("HarnessHub application authorization and prompting", () => {
       expect.objectContaining({ projectId: "project", cwd: project.path, onEvent }),
     );
     expect(session.sendPrompt).toHaveBeenCalledWith("work");
+    expect(onEvent).toHaveBeenCalledWith({ type: "model-selected", provider: "fake", modelId: "model" });
     expect(repositories.sessions.recordStarted).toHaveBeenCalledWith("project", "pi", "session");
   });
 

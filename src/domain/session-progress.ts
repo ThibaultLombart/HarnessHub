@@ -26,6 +26,7 @@ export class SessionProgress {
       this.phase = "working";
       return;
     }
+    if (event.type === "model-selected") return;
     if (event.type === "turn-start") {
       this.phase = "planning next step";
       this.activeTool = undefined;

@@ -25,7 +25,7 @@ describe("ProviderUsageMonitor", () => {
           { usedPercent: 42, windowSeconds: 604_800, resetAt: null },
         ],
       }),
-    ).toBe("codex-5h-18pct-week-42pct");
+    ).toBe("Codex : 82% free (5h) - 58% free (weekly)");
   });
 
   it("updates the Discord indicator and coalesces concurrent refreshes", async () => {
@@ -55,7 +55,7 @@ describe("ProviderUsageMonitor", () => {
     await Promise.all([first, second]);
 
     expect(getUsage).toHaveBeenCalledOnce();
-    expect(updateProviderUsageIndicator).toHaveBeenCalledWith(workspace, "codex", "codex-5h-20pct");
+    expect(updateProviderUsageIndicator).toHaveBeenCalledWith(workspace, "codex", "Codex : 80% free (5h)");
   });
 
   it("marks usage unknown without throwing when the provider request fails", async () => {
@@ -69,6 +69,10 @@ describe("ProviderUsageMonitor", () => {
     );
 
     await expect(monitor.refresh()).resolves.toBeUndefined();
-    expect(updateProviderUsageIndicator).toHaveBeenCalledWith(workspace, "codex", "codex-usage-unknown");
+    expect(updateProviderUsageIndicator).toHaveBeenCalledWith(
+      workspace,
+      "codex",
+      "Codex : usage unavailable",
+    );
   });
 });
