@@ -1,19 +1,17 @@
 ---
 name: explorer
 description: Cheap read-only HarnessHub repository scout. Finds the smallest relevant code and risk surface.
-mode: subagent
+advertise: true
 model: antigravity/gemini-3.8-flash
 thinking: low
-systemPrompt: replace-all
-permission:
-  "*": deny
-  read: allow
-  grep: allow
-  find: allow
-  ls: allow
-  subagent: deny
-maxDepth: 0
-allowedAgents: []
+systemPromptMode: replace
+inheritProjectContext: true
+inheritGlobalContext: false
+inheritSkills: false
+tools: read, grep, find, ls
+async: true
+maxSubagentDepth: 0
+acceptanceRole: read-only
 ---
 You are a read-only repository scout for HarnessHub.
 

@@ -132,6 +132,7 @@ export class PiSession {
 export class PiAdapter {
   private readonly sessions = new Map<string, PiSession>();
   private readonly starting = new Map<string, Promise<PiSession>>();
+  private readonly restarting = new Map<string, Promise<void>>();
   private installation: Promise<void> | undefined;
 
   public constructor(
@@ -145,7 +146,7 @@ export class PiAdapter {
   ) {}
 
   public getCapabilities(): ReadonlySet<HarnessCapability> {
-    return new Set(["install", "authStatus", "streaming", "sessionResume"]);
+    return new Set(["install", "authStatus", "streaming", "sessionResume", "sessionRestart"]);
   }
 
   public async detect(): Promise<{ installed: boolean; version: string | null }> {
@@ -254,6 +255,8 @@ export class PiAdapter {
     externalSessionId?: string;
     onEvent: (event: HarnessEvent) => void;
   }): Promise<PiSession> {
+    const restart = this.restarting.get(input.projectId);
+    if (restart !== undefined) await restart;
     const existing = this.sessions.get(input.projectId);
     if (existing !== undefined) {
       existing.setEventHandler(input.onEvent);
@@ -358,6 +361,23 @@ export class PiAdapter {
     await this.sessions.get(projectId)?.stop();
   }
 
+  public async restartSession(projectId: string): Promise<void> {
+    if (this.starting.has(projectId) || this.restarting.has(projectId)) throw new SessionBusyError();
+    const session = this.sessions.get(projectId);
+    if (session === undefined) return;
+    if (session.isBusy) throw new SessionBusyError();
+    const restart = (async (): Promise<void> => {
+      await session.close();
+      if (this.sessions.get(projectId) === session) this.sessions.delete(projectId);
+    })();
+    this.restarting.set(projectId, restart);
+    try {
+      await restart;
+    } finally {
+      if (this.restarting.get(projectId) === restart) this.restarting.delete(projectId);
+    }
+  }
+
   public async setSessionModel(projectId: string, provider: string, modelId: string): Promise<void> {
     await this.sessions.get(projectId)?.setModel(provider, modelId);
   }
@@ -401,7 +421,7 @@ export class PiAdapter {
   }
 
   public async dispose(): Promise<void> {
-    await Promise.allSettled(this.starting.values());
+    await Promise.allSettled([...this.starting.values(), ...this.restarting.values()]);
     await Promise.all([...this.sessions.values()].map(async (session) => session.close()));
     this.sessions.clear();
     this.starting.clear();

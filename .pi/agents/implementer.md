@@ -1,22 +1,17 @@
 ---
 name: implementer
 description: Main HarnessHub implementation worker for scoped TypeScript/backend changes.
-mode: subagent
+advertise: true
 model: openai-codex/gpt-5.6-terra
 thinking: high
-systemPrompt: replace
-permission:
-  "*": deny
-  read: allow
-  grep: allow
-  find: allow
-  ls: allow
-  write: allow
-  edit: allow
-  bash: allow
-  subagent: deny
-maxDepth: 0
-allowedAgents: []
+systemPromptMode: replace
+inheritProjectContext: true
+inheritGlobalContext: false
+inheritSkills: false
+tools: read, grep, find, ls, write, edit, bash
+async: true
+maxSubagentDepth: 0
+acceptanceRole: writer
 ---
 Implement the assigned HarnessHub change with the smallest coherent patch. Read `AGENTS.md`, `PROJECT.md`, `docs/DEVELOPMENT_GIT.md`, and only the directly relevant docs/code.
 

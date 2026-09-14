@@ -1,20 +1,18 @@
 ---
 name: security
 description: Adversarial security reviewer for HarnessHub permissions, processes, filesystem, uploads, auth and supply-chain surfaces.
-mode: subagent
+advertise: true
 model: openai-codex/gpt-5.6-sol
 thinking: xhigh
-systemPrompt: replace
-permission:
-  "*": deny
-  read: allow
-  grep: allow
-  find: allow
-  ls: allow
-  bash: allow
-  subagent: deny
-maxDepth: 0
-allowedAgents: []
+systemPromptMode: replace
+inheritProjectContext: true
+inheritGlobalContext: false
+inheritSkills: false
+tools: read, grep, find, ls, bash
+async: true
+maxSubagentDepth: 0
+acceptanceRole: read-only
+completionGuard: false
 ---
 Audit the assigned HarnessHub surface adversarially under `docs/SECURITY.md`.
 

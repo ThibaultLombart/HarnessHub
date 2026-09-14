@@ -47,6 +47,13 @@ export class ProjectDegradedError extends Error {
   }
 }
 
+export class SessionRestartConfirmationError extends Error {
+  public constructor() {
+    super("Type RESTART to confirm the rare Pi process restart");
+    this.name = "SessionRestartConfirmationError";
+  }
+}
+
 export class ProjectDeletionBlockedError extends Error {
   public constructor(message: string) {
     super(message);
@@ -476,6 +483,33 @@ export class HarnessHubApplication {
       if (!(await this.projectResourcesMatch(project))) throw new ProjectDegradedError();
       await this.projectStatuses.update(project, "idle");
       return answer;
+    } catch (error) {
+      const session = this.database.sessions.findLatestByProject(project.id);
+      const status = projectStatusFromSession(session?.status) === "working" ? "working" : "blocked";
+      await this.projectStatuses.update(project, status);
+      throw error;
+    }
+  }
+
+  public async restartProjectSession(
+    actor: Actor & { channelId: string },
+    input: { confirm: string },
+    onEvent: (event: HarnessEvent) => void,
+  ): Promise<void> {
+    const project = this.projectForChannel(actor);
+    if (input.confirm !== "RESTART") throw new SessionRestartConfirmationError();
+    if (!(await this.projectResourcesMatch(project))) {
+      await this.projectStatuses.update(project, "blocked");
+      throw new ProjectDegradedError();
+    }
+    await this.projectStatuses.update(project, "working");
+    try {
+      await this.runJob(
+        "restart-session",
+        () => this.harness.restart(actor, project.id, onEvent),
+        project.id,
+      );
+      await this.projectStatuses.update(project, "idle");
     } catch (error) {
       const session = this.database.sessions.findLatestByProject(project.id);
       const status = projectStatusFromSession(session?.status) === "working" ? "working" : "blocked";

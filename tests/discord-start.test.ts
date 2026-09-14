@@ -3,9 +3,17 @@ import { Client, Events } from "discord.js";
 import type { Logger } from "pino";
 import { describe, expect, it, vi } from "vitest";
 import type { HarnessHubApplication } from "../src/application/application.js";
-import { DiscordBot } from "../src/infrastructure/discord/discord-bot.js";
+import { commands, DiscordBot } from "../src/infrastructure/discord/discord-bot.js";
 
 describe("DiscordBot startup", () => {
+  it("registers the rare confirmation-gated Pi restart command", () => {
+    const definition = JSON.stringify(commands);
+    expect(definition).toContain('"name":"session"');
+    expect(definition).toContain('"name":"restart"');
+    expect(definition).toContain('"name":"confirm"');
+    expect(definition).toContain("Type RESTART");
+  });
+
   it("waits for ClientReady before registering guild commands", async () => {
     const commandSet = vi.fn().mockResolvedValue(undefined);
     const client = new EventEmitter() as EventEmitter & {

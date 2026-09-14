@@ -32,6 +32,7 @@ The base MVP was validated on a real Linux/systemd VM, Discord guild, and authen
 - per-project model preference persisted in SQLite and supplied to Pi sessions via `--model provider/model-id`;
 - locked Codex voice counter showing free percentages for short and weekly subscription windows, refreshed every 15 minutes and after prompts;
 - project channel names synchronized with session state: 🟢 idle, 🟡 working, and 🔴 failed/stopped/degraded;
+- confirmation-gated `/session restart` that refuses active prompts, recreates the Pi process, preserves session history, and reloads resources;
 - project archive/delete commands with exact slug confirmation;
 - deletion protections for active sessions and dirty Git worktrees;
 - enriched `/project status` dashboard with model, remote, resources, and recent jobs;

@@ -46,7 +46,7 @@ The principal Discord flow is:
 4. optionally manage Pi packages with `/resource add`, `/resource list`, and `/resource remove`
 5. optionally inspect/select project models with `/model list`, `/model status`, `/model set`, and `/model reset`
 6. send a normal message in the project channel and follow live progress updates
-7. use `/session stop` or `/session resume` when needed
+7. use `/session stop` or `/session resume` when needed; reserve `/session restart confirm:RESTART` for reloading Pi packages or extensions
 
 Useful operations include `/project status`, `/project archive`, `/project delete`, `/git status`, `/git link`, `/files upload`, `/jobs list`, `/repair status`, `/backup status`, `/mcp status`, and `/system status`.
 

@@ -70,6 +70,7 @@ describe("HarnessHubApplication", () => {
       startSession,
       getSession: () => undefined,
       stopSession: async () => undefined,
+      restartSession: vi.fn(async () => undefined),
       installPackageResource,
       removePackageResource,
       dispose: async () => undefined,
@@ -115,6 +116,20 @@ describe("HarnessHubApplication", () => {
       app.prompt({ ...actor, channelId: project.channelId, content: "fail" }, () => undefined),
     ).rejects.toThrow("provider failed");
     expect(updateProjectStatus.mock.calls.slice(-2).map((call) => call[1])).toEqual(["working", "blocked"]);
+    await expect(
+      app.restartProjectSession(
+        { ...actor, channelId: project.channelId },
+        { confirm: "wrong" },
+        () => undefined,
+      ),
+    ).rejects.toThrow(/Type RESTART/);
+    expect(adapter.restartSession).not.toHaveBeenCalled();
+    await app.restartProjectSession(
+      { ...actor, channelId: project.channelId },
+      { confirm: "RESTART" },
+      () => undefined,
+    );
+    expect(adapter.restartSession).toHaveBeenCalledWith(project.id);
     await expect(app.systemStatus({ ...actor, channelId: "management" })).resolves.toContain("Version:");
     expect(app.mcpStatus({ ...actor, channelId: "management" })).toContain("Pi: no native MCP");
     expect(app.backupStatus({ ...actor, channelId: "management" })).toContain(
@@ -125,7 +140,8 @@ describe("HarnessHubApplication", () => {
     const status = await app.projectStatus({ ...actor, channelId: project.channelId });
     expect(status).toContain("Model: fake/model");
     expect(status).toContain("Resources: project:npm:demo-pi-pack [installed]");
-    expect(status).toContain("Recent jobs: install-resource [succeeded]");
+    expect(status).toContain("restart-session [succeeded]");
+    expect(status).toContain("install-resource [succeeded]");
     first.close();
 
     const second = Database.open(databasePath);
