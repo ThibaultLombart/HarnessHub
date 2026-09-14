@@ -7,7 +7,7 @@ HarnessHub is a self-hosted Discord control plane for managing local Git workspa
 - one configured Discord guild and administrator;
 - idempotent `/setup` for a private `HARNESSHUB` category and `#workspace-management` channel;
 - empty Git project creation or HTTPS/SSH repository cloning;
-- one persisted project directory ↔ Discord channel mapping;
+- one persisted project directory ↔ Discord channel mapping, with 🟢 idle, 🟡 working, and 🔴 blocked status suffixes;
 - Pi detection, pinned non-root installation, and native authentication status;
 - managed Pi package resources globally or per project for skills/extensions/prompts;
 - persistent Pi RPC sessions in the exact project directory;

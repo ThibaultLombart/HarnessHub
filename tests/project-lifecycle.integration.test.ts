@@ -40,6 +40,7 @@ describe("project lifecycle", () => {
       ensureWorkspace: vi.fn(async () => ({ categoryId: "category", managementChannelId: "management" })),
       workspaceExists: vi.fn(async () => true),
       createProjectChannel: vi.fn(async () => "project-channel"),
+      updateProjectChannelStatus: vi.fn(async () => undefined),
       deleteProjectChannel: vi.fn(async () => undefined),
       projectChannelMatches: vi.fn(async () => true),
     };

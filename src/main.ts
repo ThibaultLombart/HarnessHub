@@ -10,6 +10,7 @@ import { DiscordResourceGateway } from "./infrastructure/discord/discord-resourc
 import { CodexUsageClient } from "./infrastructure/provider-usage/codex-usage.js";
 import { ProviderUsageMonitor } from "./infrastructure/provider-usage/provider-usage-monitor.js";
 import { HarnessHubApplication } from "./application/application.js";
+import { ProjectStatusIndicators, projectStatusFromSession } from "./application/project-status.js";
 import { checkHealth } from "./health.js";
 
 async function main(): Promise<void> {
@@ -28,7 +29,15 @@ async function main(): Promise<void> {
   });
   const client = createDiscordClient();
   const discord = new DiscordResourceGateway(client, config.discordAdminUserId);
-  const application = new HarnessHubApplication(runtimeConfig, database, discord, files, adapter);
+  const projectStatuses = new ProjectStatusIndicators(discord, logger);
+  const application = new HarnessHubApplication(
+    runtimeConfig,
+    database,
+    discord,
+    files,
+    adapter,
+    projectStatuses,
+  );
   const usageMonitor = new ProviderUsageMonitor(
     database.workspaces,
     config.discordGuildId,
@@ -64,6 +73,16 @@ async function main(): Promise<void> {
     if (health.status !== "healthy") throw new Error("HarnessHub startup health check failed");
     logger.info({ interruptedJobs, health }, "HarnessHub starting");
     await bot.start();
+    await Promise.all(
+      database.projects
+        .listActive()
+        .map((project) =>
+          projectStatuses.update(
+            project,
+            projectStatusFromSession(database.sessions.findLatestByProject(project.id)?.status),
+          ),
+        ),
+    );
     usageMonitor.start();
   } catch (error) {
     await shutdown("startup-failure");

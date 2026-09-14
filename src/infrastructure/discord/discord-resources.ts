@@ -8,6 +8,8 @@ import {
   type TextChannel,
 } from "discord.js";
 import type { DiscordResources } from "../../application/application.js";
+import type { ProjectWorkStatus } from "../../application/project-status.js";
+import type { Project } from "../../domain/project.js";
 import type { GuildWorkspace } from "../../domain/workspace.js";
 
 const categoryName = "HARNESSHUB";
@@ -130,16 +132,25 @@ export class DiscordResourceGateway implements DiscordResources {
       (channel) =>
         channel?.type === ChannelType.GuildText &&
         channel.parentId === workspace.categoryId &&
-        channel.name === slug,
+        isProjectChannelName(channel.name, slug),
     );
     if (collision) throw new Error("A Discord project channel with this name already exists");
     const channel = await guild.channels.create({
-      name: slug,
+      name: projectChannelName(slug, "idle"),
       type: ChannelType.GuildText,
       parent: workspace.categoryId,
       reason: "HarnessHub project creation",
     });
     return channel.id;
+  }
+
+  public async updateProjectChannelStatus(project: Project, status: ProjectWorkStatus): Promise<void> {
+    const channel = await this.client.channels.fetch(project.channelId);
+    if (channel?.type !== ChannelType.GuildText || !isProjectChannelName(channel.name, project.slug)) {
+      throw new Error("Project Discord channel is unavailable or remapped");
+    }
+    const name = projectChannelName(project.slug, status);
+    if (channel.name !== name) await channel.setName(name, `HarnessHub project status: ${status}`);
   }
 
   public async deleteProjectChannel(channelId: string): Promise<void> {
@@ -157,7 +168,7 @@ export class DiscordResourceGateway implements DiscordResources {
       const channel = await this.client.channels.fetch(channelId);
       return (
         channel?.type === ChannelType.GuildText &&
-        channel.name === expectedSlug &&
+        isProjectChannelName(channel.name, expectedSlug) &&
         channel.parentId === categoryId &&
         channel.permissionsLocked === true
       );
@@ -216,4 +227,18 @@ export class DiscordResourceGateway implements DiscordResources {
     }
     return entries;
   }
+}
+
+const projectStatusEmoji: Readonly<Record<ProjectWorkStatus, string>> = {
+  idle: "🟢",
+  working: "🟡",
+  blocked: "🔴",
+};
+
+export function projectChannelName(slug: string, status: ProjectWorkStatus): string {
+  return `${slug}-${projectStatusEmoji[status]}`;
+}
+
+function isProjectChannelName(name: string, slug: string): boolean {
+  return name === slug || Object.values(projectStatusEmoji).some((emoji) => name === `${slug}-${emoji}`);
 }
