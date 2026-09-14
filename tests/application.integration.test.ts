@@ -55,6 +55,7 @@ describe("HarnessHubApplication", () => {
     const startSession = vi.fn(async () => ({
       externalSessionId: "session",
       isBusy: false,
+      model: { provider: "fake", id: "model" },
       sendPrompt,
       stop: async () => undefined,
       close: async () => undefined,

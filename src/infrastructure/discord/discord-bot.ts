@@ -521,21 +521,24 @@ export class DiscordBot {
       return;
     }
 
+    let modelLabel = this.application.projectModelLabel({ ...actor, channelId: message.channelId });
     const controls = new ActionRowBuilder<ButtonBuilder>().addComponents(
       new ButtonBuilder().setCustomId(`hh:stop:${project.id}`).setLabel("Stop").setStyle(ButtonStyle.Danger),
     );
     const tracker = new SessionProgress();
+    const renderProgress = (): string =>
+      withModelFooter(tracker.render({ stalledAfterMs: stalledProgressAfterMs }), modelLabel);
     const progress = await message.reply({
-      content: tracker.render({ stalledAfterMs: stalledProgressAfterMs }),
+      content: renderProgress(),
       components: [controls],
       allowedMentions: { parse: [] },
     });
-    let lastStatus = tracker.render({ stalledAfterMs: stalledProgressAfterMs });
+    let lastStatus = renderProgress();
     let finished = false;
     let updateChain = Promise.resolve();
     const scheduleProgressUpdate = (): void => {
       if (finished) return;
-      const status = tracker.render({ stalledAfterMs: stalledProgressAfterMs });
+      const status = renderProgress();
       if (status === lastStatus) return;
       lastStatus = status;
       updateChain = updateChain
@@ -549,6 +552,7 @@ export class DiscordBot {
     };
     const interval = setInterval(scheduleProgressUpdate, progressUpdateIntervalMs);
     const onEvent = (event: HarnessEvent): void => {
+      if (event.type === "model-selected") modelLabel = `${event.provider}/${event.modelId}`;
       tracker.record(event);
       scheduleProgressUpdate();
     };
@@ -561,7 +565,7 @@ export class DiscordBot {
       finished = true;
       clearInterval(interval);
       await updateChain;
-      const chunks = splitDiscordMessage(answer);
+      const chunks = splitDiscordMessageWithModelFooter(answer, modelLabel);
       await progress.edit({
         content: chunks.shift() ?? "Pi completed.",
         components: [],
@@ -580,7 +584,7 @@ export class DiscordBot {
       this.logger.warn({ error, projectId: project.id }, "Pi prompt failed");
       await updateChain;
       await progress.edit({
-        content: safeDiscordError(error),
+        content: withModelFooter(safeDiscordError(error), modelLabel),
         components: [],
         allowedMentions: { parse: [] },
       });
@@ -679,6 +683,25 @@ function formatResource(resource: HarnessResource): string {
   const project = resource.scope === "project" ? ` project:${resource.projectId ?? "unknown"}` : "";
   const error = resource.safeError === null ? "" : ` — ${resource.safeError}`;
   return `${id} ${resource.scope}${project} ${resource.type} ${resource.source} [${resource.status}]${error}`;
+}
+
+export function withModelFooter(message: string, modelLabel: string): string {
+  const safeModel =
+    modelLabel
+      .replace(/[\r\n\0]/g, " ")
+      .trim()
+      .slice(0, 160) || "unknown";
+  return `${message}\n\nModel used: ${safeModel}`;
+}
+
+export function splitDiscordMessageWithModelFooter(
+  message: string,
+  modelLabel: string,
+  maximum = 1900,
+): string[] {
+  const footer = withModelFooter("", modelLabel).slice(2);
+  const contentMaximum = Math.max(1, maximum - footer.length - 2);
+  return splitDiscordMessage(message, contentMaximum).map((chunk) => withModelFooter(chunk, modelLabel));
 }
 
 export function splitDiscordMessage(message: string, maximum = 1900): string[] {

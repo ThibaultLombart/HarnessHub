@@ -18,7 +18,7 @@ The base MVP was validated on a real Linux/systemd VM, Discord guild, and authen
 - explicit Pi capabilities, detection, pinned non-root installation, and native auth-status reporting;
 - supervised Pi RPC subprocesses with strict JSONL framing, persistent session IDs, concurrency limits, stop/resume, and crash recovery;
 - ordinary project-channel prompts with compact bounded Discord output;
-- live Pi progress dashboard showing current observable phase, current tool, recent tools, elapsed time, last event age, and possible-stall warning;
+- live Pi progress dashboard showing the observable stage, active and recent actions, turn/action/failure/retry/compaction counts, action and total timing, possible-stall warning, and the actual model reported by Pi;
 - non-root systemd unit, installation documentation, and an interactive idempotent `sudo ./scripts/install.sh` installer with protected credential input and rollback copies;
 - Discord startup waits for `ClientReady`, documents the required channel/role permissions, and reports missing setup permissions clearly.
 
@@ -30,7 +30,7 @@ The base MVP was validated on a real Linux/systemd VM, Discord guild, and authen
 - persistent resource state: `installed`, `failed`, `removed`;
 - project model management through `/model list`, `/model status`, `/model set`, and `/model reset`;
 - per-project model preference persisted in SQLite and supplied to Pi sessions via `--model provider/model-id`;
-- read-only Codex usage indicator channel showing short and weekly subscription windows, refreshed every 15 minutes and after prompts;
+- locked Codex voice counter showing free percentages for short and weekly subscription windows, refreshed every 15 minutes and after prompts;
 - project channel names synchronized with session state: 🟢 idle, 🟡 working, and 🔴 failed/stopped/degraded;
 - project archive/delete commands with exact slug confirmation;
 - deletion protections for active sessions and dirty Git worktrees;

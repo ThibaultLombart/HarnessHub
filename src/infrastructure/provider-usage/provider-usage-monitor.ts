@@ -65,7 +65,7 @@ export class ProviderUsageMonitor {
       this.logger.warn({ error }, "Could not refresh provider usage indicator");
       if (workspace === undefined) return;
       try {
-        await this.discord.updateProviderUsageIndicator(workspace, "codex", "codex-usage-unknown");
+        await this.discord.updateProviderUsageIndicator(workspace, "codex", "Codex : usage unavailable");
       } catch (discordError) {
         this.logger.warn({ error: discordError }, "Could not mark provider usage indicator unknown");
       }
@@ -74,13 +74,16 @@ export class ProviderUsageMonitor {
 }
 
 export function providerUsageChannelName(usage: ProviderUsage): string {
-  if (usage.windows.length === 0) return `${usage.provider}-usage-unknown`;
-  const windows = usage.windows.map((window) => `${windowLabel(window)}-${String(window.usedPercent)}pct`);
-  return `${usage.provider}-${windows.join("-")}`.slice(0, 100);
+  const provider = "Codex";
+  if (usage.windows.length === 0) return `${provider} : usage unavailable`;
+  const windows = usage.windows.map(
+    (window) => `${String(Math.max(0, 100 - window.usedPercent))}% free (${windowLabel(window)})`,
+  );
+  return `${provider} : ${windows.join(" - ")}`.slice(0, 100);
 }
 
 function windowLabel(window: UsageWindow): string {
-  if (window.windowSeconds === 7 * 24 * 60 * 60) return "week";
+  if (window.windowSeconds === 7 * 24 * 60 * 60) return "weekly";
   if (window.windowSeconds % (60 * 60) === 0) return `${String(window.windowSeconds / 3600)}h`;
   if (window.windowSeconds % 60 === 0) return `${String(window.windowSeconds / 60)}m`;
   return `${String(window.windowSeconds)}s`;

@@ -83,6 +83,9 @@ export class HarnessHub {
     };
     const session = await this.adapter.startSession(startInput);
     if (session.isBusy) throw new SessionBusyError();
+    if (session.model !== null) {
+      onEvent({ type: "model-selected", provider: session.model.provider, modelId: session.model.id });
+    }
     this.repositories.sessions.recordStarted(project.id, "pi", session.externalSessionId);
     this.repositories.sessions.updateStatus(project.id, "working");
     try {
@@ -124,6 +127,9 @@ export class HarnessHub {
         ? {}
         : { externalSessionId: previous.externalSessionId }),
     });
+    if (session.model !== null) {
+      onEvent({ type: "model-selected", provider: session.model.provider, modelId: session.model.id });
+    }
     this.repositories.sessions.recordStarted(project.id, "pi", session.externalSessionId);
     this.repositories.sessions.updateStatus(project.id, "idle");
   }

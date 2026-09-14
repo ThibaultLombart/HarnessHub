@@ -6,6 +6,7 @@ import {
   type CategoryChannel,
   type Guild,
   type TextChannel,
+  type VoiceChannel,
 } from "discord.js";
 import type { DiscordResources } from "../../application/application.js";
 import type { ProjectWorkStatus } from "../../application/project-status.js";
@@ -80,48 +81,50 @@ export class DiscordResourceGateway implements DiscordResources {
     provider: string,
     channelName: string,
   ): Promise<void> {
-    if (!/^[a-z0-9-]{1,32}$/.test(provider) || !/^[a-z0-9-]{1,100}$/.test(channelName)) {
+    if (
+      !/^[a-z0-9-]{1,32}$/.test(provider) ||
+      channelName.length < 1 ||
+      channelName.length > 100 ||
+      /[\r\n\0]/.test(channelName)
+    ) {
       throw new Error("Invalid provider usage channel identity");
     }
     const guild = await this.client.guilds.fetch(workspace.discordGuildId);
     const channels = await guild.channels.fetch();
-    const topic = `HarnessHub provider usage:${provider}`;
+    const displayName = provider === "codex" ? "Codex" : provider;
     let indicator = channels.find(
-      (channel): channel is TextChannel =>
-        channel?.type === ChannelType.GuildText &&
+      (channel): channel is VoiceChannel =>
+        channel?.type === ChannelType.GuildVoice &&
         channel.parentId === workspace.categoryId &&
-        channel.topic === topic,
+        channel.name.startsWith(`${displayName} :`),
     );
     indicator ??= await guild.channels.create({
       name: channelName,
-      type: ChannelType.GuildText,
+      type: ChannelType.GuildVoice,
       parent: workspace.categoryId,
-      topic,
       reason: "HarnessHub provider usage indicator",
     });
     const administratorPermissions = indicator.permissionOverwrites.cache.get(this.administratorId);
-    const readOnlyPermissions = [
-      PermissionFlagsBits.SendMessages,
-      PermissionFlagsBits.SendMessagesInThreads,
-      PermissionFlagsBits.CreatePublicThreads,
-      PermissionFlagsBits.CreatePrivateThreads,
-      PermissionFlagsBits.AddReactions,
-    ];
-    if (readOnlyPermissions.some((permission) => administratorPermissions?.deny.has(permission) !== true)) {
+    const lockedPermissions = [PermissionFlagsBits.Connect, PermissionFlagsBits.Speak];
+    if (lockedPermissions.some((permission) => administratorPermissions?.deny.has(permission) !== true)) {
       await indicator.permissionOverwrites.edit(
         this.administratorId,
-        {
-          SendMessages: false,
-          SendMessagesInThreads: false,
-          CreatePublicThreads: false,
-          CreatePrivateThreads: false,
-          AddReactions: false,
-        },
-        { reason: "Keep provider usage indicator read-only" },
+        { Connect: false, Speak: false },
+        { reason: "Keep provider usage indicator non-joinable" },
       );
     }
     if (indicator.name !== channelName) {
       await indicator.setName(channelName, "Refresh HarnessHub provider usage indicator");
+    }
+    const legacyTopic = `HarnessHub provider usage:${provider}`;
+    const legacyIndicator = channels.find(
+      (channel): channel is TextChannel =>
+        channel?.type === ChannelType.GuildText &&
+        channel.parentId === workspace.categoryId &&
+        channel.topic === legacyTopic,
+    );
+    if (legacyIndicator !== undefined) {
+      await legacyIndicator.delete("Migrate HarnessHub provider usage indicator to a voice counter");
     }
   }
 

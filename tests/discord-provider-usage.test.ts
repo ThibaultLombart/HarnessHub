@@ -13,18 +13,26 @@ const workspace: GuildWorkspace = {
 };
 
 describe("Discord provider usage indicator", () => {
-  it("creates one identified read-only channel and renames it in place", async () => {
+  it("creates one locked voice counter, renames it in place, and removes the legacy text indicator", async () => {
     const channels = new Collection<string, unknown>();
+    const deleteLegacy = vi.fn(async () => undefined);
+    channels.set("legacy", {
+      id: "legacy",
+      type: ChannelType.GuildText,
+      name: "codex-5h-89pct-week-85pct",
+      parentId: "category",
+      topic: "HarnessHub provider usage:codex",
+      delete: deleteLegacy,
+    });
     const overwrites = new Collection<string, { deny: { has(permission: bigint): boolean } }>();
     const editPermissions = vi.fn(async (id: string) => {
       overwrites.set(id, { deny: { has: () => true } });
     });
     const indicator = {
       id: "indicator",
-      type: ChannelType.GuildText,
-      name: "codex-usage-unknown",
+      type: ChannelType.GuildVoice,
+      name: "Codex : usage unavailable",
       parentId: "category",
-      topic: "HarnessHub provider usage:codex",
       permissionOverwrites: { cache: overwrites, edit: editPermissions },
       setName: vi.fn(async (name: string) => {
         indicator.name = name;
@@ -38,22 +46,28 @@ describe("Discord provider usage indicator", () => {
     const client = { guilds: { fetch: vi.fn(async () => guild) } } as unknown as Client;
     const gateway = new DiscordResourceGateway(client, "admin");
 
-    await gateway.updateProviderUsageIndicator(workspace, "codex", "codex-usage-unknown");
-    await gateway.updateProviderUsageIndicator(workspace, "codex", "codex-5h-18pct-week-42pct");
+    await gateway.updateProviderUsageIndicator(workspace, "codex", "Codex : usage unavailable");
+    channels.delete("legacy");
+    await gateway.updateProviderUsageIndicator(
+      workspace,
+      "codex",
+      "Codex : 11% free (5h) - 15% free (weekly)",
+    );
 
     expect(create).toHaveBeenCalledOnce();
     expect(create).toHaveBeenCalledWith(
       expect.objectContaining({
-        name: "codex-usage-unknown",
+        name: "Codex : usage unavailable",
+        type: ChannelType.GuildVoice,
         parent: "category",
-        topic: "HarnessHub provider usage:codex",
       }),
     );
     expect(editPermissions).toHaveBeenCalledOnce();
     expect(indicator.setName).toHaveBeenCalledWith(
-      "codex-5h-18pct-week-42pct",
+      "Codex : 11% free (5h) - 15% free (weekly)",
       "Refresh HarnessHub provider usage indicator",
     );
-    expect(overwrites.get("admin")?.deny.has(PermissionFlagsBits.SendMessages)).toBe(true);
+    expect(overwrites.get("admin")?.deny.has(PermissionFlagsBits.Connect)).toBe(true);
+    expect(deleteLegacy).toHaveBeenCalledOnce();
   });
 });

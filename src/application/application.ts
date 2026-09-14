@@ -368,6 +368,15 @@ export class HarnessHubApplication {
     return this.database.modelPreferences.findByProject(project.id) ?? null;
   }
 
+  public projectModelLabel(actor: Actor & { channelId: string }): string {
+    const project = this.projectForChannel(actor);
+    const activeModel = this.adapter.getSession(project.id)?.model;
+    if (activeModel !== null && activeModel !== undefined) {
+      return `${activeModel.provider}/${activeModel.id}`;
+    }
+    return modelPreferenceText(this.database.modelPreferences.findByProject(project.id));
+  }
+
   public async setProjectModel(
     actor: Actor & { channelId: string },
     input: { model: string },

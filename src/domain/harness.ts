@@ -11,6 +11,7 @@ export class SessionBusyError extends Error {
 export type HarnessEvent =
   | { type: "working" }
   | { type: "agent-start" }
+  | { type: "model-selected"; provider: string; modelId: string }
   | { type: "turn-start" }
   | { type: "message-start" }
   | { type: "message-end" }
@@ -29,6 +30,7 @@ export type HarnessCapability = "install" | "authStatus" | "streaming" | "sessio
 export type HarnessSession = {
   readonly externalSessionId: string;
   readonly isBusy: boolean;
+  readonly model: Readonly<{ provider: string; id: string }> | null;
   sendPrompt(message: string): Promise<string>;
   stop(): Promise<void>;
   close(): Promise<void>;

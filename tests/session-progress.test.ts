@@ -20,8 +20,13 @@ describe("SessionProgress", () => {
     progress.record({ type: "tool-update", toolName: "bash\nsecret" });
     setNow(12_000);
 
-    expect(progress.render({ stalledAfterMs: 120_000 })).toContain("Current tool: bash secret (1 updates)");
-    expect(progress.render({ stalledAfterMs: 120_000 })).toContain("Elapsed: 12s · Last Pi event: 12s ago");
+    const rendered = progress.render({ stalledAfterMs: 120_000 });
+    expect(rendered).toContain("Stage: running a project command");
+    expect(rendered).toContain("Progress: 0 turns · 0 actions completed");
+    expect(rendered).toContain(
+      "Now: running a project command (bash secret) · running 12s · 1 progress updates",
+    );
+    expect(rendered).toContain("Timing: 12s elapsed · last activity 12s ago");
   });
 
   it("keeps a compact list of recent completed tools", () => {
@@ -31,7 +36,21 @@ describe("SessionProgress", () => {
     progress.record({ type: "tool-end", toolName: "edit", failed: false });
     progress.record({ type: "tool-end", toolName: "bash", failed: true });
 
-    expect(progress.render({ stalledAfterMs: 120_000 })).toContain("Recent tools: bash ✗, edit ✓, read ✓");
+    const rendered = progress.render({ stalledAfterMs: 120_000 });
+    expect(rendered).toContain("Progress: 0 turns · 3 actions completed · 1 failed");
+    expect(rendered).toContain("Recent actions: bash ✗, edit ✓, read ✓");
+  });
+
+  it("tracks turns, retries, and context compactions without inventing a completion percentage", () => {
+    const progress = new SessionProgress(() => 0);
+    progress.record({ type: "turn-start" });
+    progress.record({ type: "compaction-start" });
+    progress.record({ type: "compaction-end" });
+    progress.record({ type: "retry-start" });
+
+    const rendered = progress.render({ stalledAfterMs: 120_000 });
+    expect(rendered).toContain("Progress: 1 turn · 0 actions completed · 1 retry · 1 compaction");
+    expect(rendered).not.toMatch(/\d+%/);
   });
 
   it("flags a potentially stalled session when Pi stops emitting events", () => {

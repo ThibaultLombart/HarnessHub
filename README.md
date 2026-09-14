@@ -12,8 +12,8 @@ HarnessHub is a self-hosted Discord control plane for managing local Git workspa
 - managed Pi package resources globally or per project for skills/extensions/prompts;
 - persistent Pi RPC sessions in the exact project directory;
 - ordinary project-channel messages as prompts;
-- compact progress, stop/resume controls, process-crash handling, and restart reconciliation;
-- a read-only Codex subscription-usage channel refreshed every 15 minutes and after prompts.
+- observable progress with stage, current/recent actions, counters, timing, and actual model footer, plus stop/resume controls, process-crash handling, and restart reconciliation;
+- a locked voice counter such as `Codex : 72% free (5h) - 64% free (weekly)`, refreshed every 15 minutes and after prompts.
 
 The MVP intentionally started small; the 1.0 path now adds managed Pi packages/skills, model selection, uploads, project lifecycle, job visibility, local Git controls, diagnostics, backup guidance, and Discord-assisted update checks. Native MCP, provider repository creation, and multi-user operation remain later work.
 

@@ -12,8 +12,14 @@ export class SessionProgress {
   private lastActivityAt: number;
   private phase = "starting";
   private activeTool: string | undefined;
+  private activeToolStartedAt: number | undefined;
   private readonly recentTools: ProgressTool[] = [];
   private toolUpdateCount = 0;
+  private turnCount = 0;
+  private completedToolCount = 0;
+  private failedToolCount = 0;
+  private retryCount = 0;
+  private compactionCount = 0;
 
   public constructor(private readonly clock: Clock = () => Date.now()) {
     this.startedAt = this.clock();
@@ -26,43 +32,53 @@ export class SessionProgress {
       this.phase = "working";
       return;
     }
+    if (event.type === "model-selected") return;
     if (event.type === "turn-start") {
-      this.phase = "planning next step";
+      this.turnCount += 1;
+      this.phase = this.completedToolCount === 0 ? "analyzing the request" : "planning the next step";
       this.activeTool = undefined;
+      this.activeToolStartedAt = undefined;
       return;
     }
     if (event.type === "message-start") {
-      this.phase = "thinking";
+      this.phase = this.completedToolCount === 0 ? "analyzing the request" : "reviewing the work so far";
       return;
     }
     if (event.type === "message-end") {
-      this.phase = "message ready";
+      this.phase = "deciding the next action";
       return;
     }
     if (event.type === "tool-start") {
-      this.phase = "using tool";
       this.activeTool = sanitizeLabel(event.toolName);
+      this.activeToolStartedAt = this.clock();
+      this.phase = describeTool(this.activeTool);
       this.toolUpdateCount = 0;
       return;
     }
     if (event.type === "tool-update") {
-      this.phase = "tool still running";
       this.activeTool = sanitizeLabel(event.toolName);
+      this.activeToolStartedAt ??= this.clock();
+      this.phase = describeTool(this.activeTool);
       this.toolUpdateCount += 1;
       return;
     }
     if (event.type === "tool-end") {
       const name = sanitizeLabel(event.toolName);
-      this.phase = event.failed ? "tool failed; continuing" : "tool completed";
+      this.completedToolCount += 1;
+      if (event.failed) this.failedToolCount += 1;
+      this.phase = event.failed ? "recovering from a failed action" : "checking the result";
       this.activeTool = undefined;
+      this.activeToolStartedAt = undefined;
       this.toolUpdateCount = 0;
       this.recentTools.unshift({ name, failed: event.failed });
       this.recentTools.splice(5);
       return;
     }
     if (event.type === "compaction-start") {
-      this.phase = "compacting context";
+      this.compactionCount += 1;
+      this.phase = "compacting context to continue safely";
       this.activeTool = undefined;
+      this.activeToolStartedAt = undefined;
       return;
     }
     if (event.type === "compaction-end") {
@@ -70,8 +86,10 @@ export class SessionProgress {
       return;
     }
     if (event.type === "retry-start") {
-      this.phase = "retrying after transient error";
+      this.retryCount += 1;
+      this.phase = "retrying after a temporary provider error";
       this.activeTool = undefined;
+      this.activeToolStartedAt = undefined;
       return;
     }
     if (event.type === "retry-end") {
@@ -79,8 +97,9 @@ export class SessionProgress {
       return;
     }
     if (event.type === "settled") {
-      this.phase = "settled";
+      this.phase = "finalizing the response";
       this.activeTool = undefined;
+      this.activeToolStartedAt = undefined;
       return;
     }
     this.phase = "failed";
@@ -90,19 +109,27 @@ export class SessionProgress {
   public render(options: { stalledAfterMs: number; now?: number } = { stalledAfterMs: 120_000 }): string {
     const now = options.now ?? this.clock();
     const idleFor = Math.max(0, now - this.lastActivityAt);
+    const failed = this.failedToolCount === 0 ? "" : ` · ${String(this.failedToolCount)} failed`;
+    const retries = this.retryCount === 0 ? "" : ` · ${countLabel(this.retryCount, "retry", "retries")}`;
+    const compactions =
+      this.compactionCount === 0 ? "" : ` · ${countLabel(this.compactionCount, "compaction")}`;
     const lines = [
       "Pi is working…",
-      `Phase: ${this.phase}`,
-      `Elapsed: ${formatDuration(now - this.startedAt)} · Last Pi event: ${formatDuration(idleFor)} ago`,
+      `Stage: ${this.phase}`,
+      `Progress: ${countLabel(this.turnCount, "turn")} · ${countLabel(this.completedToolCount, "action")} completed${failed}${retries}${compactions}`,
     ];
     if (this.activeTool !== undefined) {
+      const runningFor = Math.max(0, now - (this.activeToolStartedAt ?? now));
       lines.push(
-        `Current tool: ${this.activeTool}${this.toolUpdateCount > 0 ? ` (${String(this.toolUpdateCount)} updates)` : ""}`,
+        `Now: ${describeTool(this.activeTool)} (${this.activeTool}) · running ${formatDuration(runningFor)}${this.toolUpdateCount > 0 ? ` · ${String(this.toolUpdateCount)} progress updates` : ""}`,
       );
     }
+    lines.push(
+      `Timing: ${formatDuration(now - this.startedAt)} elapsed · last activity ${formatDuration(idleFor)} ago`,
+    );
     if (this.recentTools.length > 0) {
       lines.push(
-        `Recent tools: ${this.recentTools
+        `Recent actions: ${this.recentTools
           .map((tool) => `${tool.name} ${tool.failed ? "✗" : "✓"}`)
           .join(", ")}`,
       );
@@ -112,6 +139,23 @@ export class SessionProgress {
     }
     return lines.join("\n");
   }
+}
+
+function countLabel(count: number, singular: string, plural = `${singular}s`): string {
+  return `${String(count)} ${count === 1 ? singular : plural}`;
+}
+
+function describeTool(toolName: string): string {
+  const normalized = toolName.toLowerCase();
+  if (["read", "ls", "glob"].some((name) => normalized.includes(name))) return "inspecting project files";
+  if (["grep", "search", "find", "rg"].some((name) => normalized.includes(name)))
+    return "searching the codebase";
+  if (["edit", "write", "patch"].some((name) => normalized.includes(name))) return "modifying project files";
+  if (["test", "check", "lint"].some((name) => normalized.includes(name))) return "running validation checks";
+  if (["web", "fetch", "browser"].some((name) => normalized.includes(name)))
+    return "consulting external documentation";
+  if (normalized.includes("bash") || normalized.includes("shell")) return "running a project command";
+  return "performing a project action";
 }
 
 function sanitizeLabel(value: string): string {
