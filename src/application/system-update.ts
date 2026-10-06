@@ -75,9 +75,11 @@ export class SystemUpdate {
     };
   }
 
-  public async apply(): Promise<SystemUpdateStatus> {
-    throw new SystemUpdateBlockedError(
-      "Discord self-update is disabled. Run the trusted operator procedure manually from a Git checkout.",
+  public apply(): Promise<SystemUpdateStatus> {
+    return Promise.reject(
+      new SystemUpdateBlockedError(
+        "Discord self-update is disabled. Run the trusted operator procedure manually from a Git checkout.",
+      ),
     );
   }
 
