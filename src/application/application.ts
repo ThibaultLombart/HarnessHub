@@ -55,8 +55,8 @@ export class SessionRestartConfirmationError extends Error {
 }
 
 export class ProjectDeletionBlockedError extends Error {
-  public constructor(message: string) {
-    super(message);
+  public constructor(message: string, options?: ErrorOptions) {
+    super(message, options);
     this.name = "ProjectDeletionBlockedError";
   }
 }
@@ -627,8 +627,11 @@ async function isGitDirty(cwd: string): Promise<boolean> {
   try {
     const result = await executeFile("git", ["-C", cwd, "status", "--porcelain"], { timeout: 10_000 });
     return result.stdout !== "";
-  } catch {
-    return false;
+  } catch (error) {
+    throw new ProjectDeletionBlockedError(
+      "Refusing to delete a project because Git status could not verify a clean working tree",
+      { cause: error },
+    );
   }
 }
 
