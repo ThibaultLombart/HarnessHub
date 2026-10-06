@@ -623,6 +623,18 @@ function actorFrom(guildId: string | null, userId: string): { guildId: string; u
 }
 
 function formatSystemUpdate(status: SystemUpdateStatus): string {
+  if (status.mode === "installed") {
+    return [
+      "HarnessHub update status",
+      `Deployment: ${status.checkout}`,
+      "Mode: installed artifact (manual-only)",
+      `Inspection: ${status.message}`,
+      "Update comparison: unavailable",
+      "Operator action: run git pull and sudo ./scripts/install.sh --no-pi-login from a trusted Git checkout.",
+      "Discord self-update: disabled by design.",
+    ].join("\n");
+  }
+
   return [
     "HarnessHub update status",
     `Checkout: ${status.checkout}`,
@@ -630,8 +642,10 @@ function formatSystemUpdate(status: SystemUpdateStatus): string {
     `HEAD: ${status.head.slice(0, 12)}`,
     `Upstream: ${status.upstream ?? "none"}`,
     `Upstream HEAD: ${status.upstreamHead?.slice(0, 12) ?? "none"}`,
+    `Upstream freshness: ${status.upstreamFreshness}`,
     `Working tree: ${status.clean ? "clean" : "dirty"}`,
     `Update available: ${status.updateAvailable ? "yes" : "no"}`,
+    "Apply: disabled in Discord; use the manual operator procedure from a trusted checkout.",
   ].join("\n");
 }
 
