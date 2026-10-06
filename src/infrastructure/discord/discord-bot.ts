@@ -775,6 +775,7 @@ export function safeDiscordError(error: unknown): string {
       "ProjectAlreadyExistsError",
       "ProjectDegradedError",
       "ProjectDeletionBlockedError",
+      "ProjectArchivedError",
       "InvalidProjectInputError",
       "InvalidResourceInputError",
       "InvalidModelInputError",

@@ -1,5 +1,5 @@
 import { SessionBusyError, type HarnessAdapter, type HarnessEvent } from "../domain/harness.js";
-import type { Project } from "../domain/project.js";
+import { assertProjectActive, type Project } from "../domain/project.js";
 
 export type Actor = Readonly<{ guildId: string; userId: string }>;
 
@@ -76,7 +76,8 @@ export class HarnessHub {
   ): Promise<string> {
     this.authorize(input);
     const project = this.repositories.projects.findByChannelId(input.channelId);
-    if (project?.archivedAt !== null) throw new UnmappedChannelError();
+    if (project === undefined) throw new UnmappedChannelError();
+    assertProjectActive(project);
     const previous = this.repositories.sessions.findLatestByProject(project.id);
     const startInput = {
       projectId: project.id,
@@ -121,7 +122,9 @@ export class HarnessHub {
     onEvent: (event: HarnessEvent) => void,
   ): Promise<void> {
     this.authorize(actor);
-    if (this.repositories.projects.findById(projectId) === undefined) throw new Error("Project not found");
+    const project = this.repositories.projects.findById(projectId);
+    if (project === undefined) throw new Error("Project not found");
+    assertProjectActive(project);
     if (this.adapter.getSession(projectId)?.isBusy === true) throw new SessionBusyError();
     if (this.adapter.restartSession === undefined) throw new SessionRestartUnsupportedError();
     await this.adapter.restartSession(projectId);
@@ -137,6 +140,7 @@ export class HarnessHub {
     this.authorize(actor);
     const project = this.repositories.projects.findById(projectId);
     if (project === undefined) throw new Error("Project not found");
+    assertProjectActive(project);
     const previous = this.repositories.sessions.findLatestByProject(project.id);
     const session = await this.adapter.startSession({
       projectId: project.id,

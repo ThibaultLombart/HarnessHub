@@ -11,7 +11,7 @@ import {
   type ModelDescriptor,
   type ModelPreference,
 } from "../domain/model.js";
-import type { Project } from "../domain/project.js";
+import { assertProjectActive, ProjectArchivedError, type Project } from "../domain/project.js";
 import type { HarnessResource, ResourceScope } from "../domain/resource.js";
 import type { GuildWorkspace } from "../domain/workspace.js";
 import { CreateProject } from "./create-project.js";
@@ -62,6 +62,8 @@ export class ProjectDeletionBlockedError extends Error {
 }
 
 const maximumUploadBytes = 5 * 1024 * 1024;
+
+export { ProjectArchivedError };
 
 export class ModelManagementUnsupportedError extends Error {
   public constructor() {
@@ -136,7 +138,7 @@ export class HarnessHubApplication {
     actor: Actor & { channelId: string },
     input: { confirm: string },
   ): Promise<Project> {
-    const project = this.projectForChannel(actor);
+    const project = this.activeProjectForChannel(actor);
     if (input.confirm !== project.slug)
       throw new ProjectDeletionBlockedError("Type the project slug to confirm archival");
     await this.harness.stop(actor, project.id);
@@ -258,7 +260,7 @@ export class HarnessHubApplication {
     actor: Actor & { channelId: string },
     input: { relativePath: string; content: Uint8Array },
   ): Promise<string> {
-    const project = this.projectForChannel(actor);
+    const project = this.activeProjectForChannel(actor);
     if (!(await this.projectResourcesMatch(project))) throw new ProjectDegradedError();
     return this.runJob(
       "upload-file",
@@ -280,7 +282,7 @@ export class HarnessHubApplication {
   }
 
   public async linkGitRemote(actor: Actor & { channelId: string }, repositoryUrl: string): Promise<string> {
-    const project = this.projectForChannel(actor);
+    const project = this.activeProjectForChannel(actor);
     if (!(await this.projectResourcesMatch(project))) throw new ProjectDegradedError();
     return this.runJob("link-git-remote", () => this.git.linkRemote(project, repositoryUrl), project.id);
   }
@@ -303,7 +305,7 @@ export class HarnessHubApplication {
   ): Promise<HarnessResource> {
     this.harness.authorize(actor);
     const workspace = this.requireWorkspace(actor.guildId);
-    const project = input.scope === "project" ? this.projectForChannel(actor) : null;
+    const project = input.scope === "project" ? this.activeProjectForChannel(actor) : null;
     if (input.scope === "global" && actor.channelId !== workspace.managementChannelId) {
       throw new ManagementChannelRequiredError();
     }
@@ -340,7 +342,7 @@ export class HarnessHubApplication {
   ): Promise<HarnessResource> {
     this.harness.authorize(actor);
     const workspace = this.requireWorkspace(actor.guildId);
-    const project = input.scope === "project" ? this.projectForChannel(actor) : null;
+    const project = input.scope === "project" ? this.activeProjectForChannel(actor) : null;
     if (input.scope === "global" && actor.channelId !== workspace.managementChannelId) {
       throw new ManagementChannelRequiredError();
     }
@@ -388,7 +390,7 @@ export class HarnessHubApplication {
     actor: Actor & { channelId: string },
     input: { model: string },
   ): Promise<ModelPreference> {
-    const project = this.projectForChannel(actor);
+    const project = this.activeProjectForChannel(actor);
     const parsed = parseModelPattern(input.model);
     if (!(await this.projectResourcesMatch(project))) throw new ProjectDegradedError();
     const adapter = this.adapterSupportsModels();
@@ -408,7 +410,7 @@ export class HarnessHubApplication {
   }
 
   public resetProjectModel(actor: Actor & { channelId: string }): void {
-    const project = this.projectForChannel(actor);
+    const project = this.activeProjectForChannel(actor);
     this.database.modelPreferences.remove(project.id);
   }
 
@@ -472,7 +474,7 @@ export class HarnessHubApplication {
     actor: Actor & { channelId: string; content: string },
     onEvent: (event: HarnessEvent) => void,
   ): Promise<string> {
-    const project = this.projectForChannel(actor);
+    const project = this.activeProjectForChannel(actor);
     if (!(await this.projectResourcesMatch(project))) {
       await this.projectStatuses.update(project, "blocked");
       throw new ProjectDegradedError();
@@ -496,7 +498,7 @@ export class HarnessHubApplication {
     input: { confirm: string },
     onEvent: (event: HarnessEvent) => void,
   ): Promise<void> {
-    const project = this.projectForChannel(actor);
+    const project = this.activeProjectForChannel(actor);
     if (input.confirm !== "RESTART") throw new SessionRestartConfirmationError();
     if (!(await this.projectResourcesMatch(project))) {
       await this.projectStatuses.update(project, "blocked");
@@ -534,6 +536,7 @@ export class HarnessHubApplication {
     this.harness.authorize(actor);
     const project = this.database.projects.findById(projectId);
     if (project === undefined) throw new Error("Project not found");
+    assertProjectActive(project);
     if (!(await this.projectResourcesMatch(project))) {
       await this.projectStatuses.update(project, "blocked");
       throw new ProjectDegradedError();
@@ -552,6 +555,12 @@ export class HarnessHubApplication {
     this.harness.authorize(actor);
     const project = this.database.projects.findByChannelId(actor.channelId);
     if (project === undefined) throw new UnmappedChannelError();
+    return project;
+  }
+
+  private activeProjectForChannel(actor: Actor & { channelId: string }): Project {
+    const project = this.projectForChannel(actor);
+    assertProjectActive(project);
     return project;
   }
 
@@ -667,6 +676,7 @@ function safeJobError(error: unknown): string {
     return error.message;
   if (error instanceof Error && error.name === "InvalidResourceInputError") return error.message;
   if (error instanceof Error && error.name === "ProjectDeletionBlockedError") return error.message;
+  if (error instanceof Error && error.name === "ProjectArchivedError") return error.message;
   if (
     error instanceof Error &&
     [
