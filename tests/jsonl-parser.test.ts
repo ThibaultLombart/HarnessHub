@@ -22,6 +22,65 @@ describe("JsonlParser", () => {
     expect(record).toHaveBeenCalledTimes(2);
   });
 
+  it("rejects an oversized LF-terminated record before invoking the callback", () => {
+    const record = vi.fn();
+    const parser = new JsonlParser(record, 8);
+
+    expect(() => parser.push(Buffer.from("123456789\n"))).toThrow(/maximum/i);
+    expect(record).not.toHaveBeenCalled();
+  });
+
+  it("rejects an oversized CRLF-terminated record before invoking the callback", () => {
+    const record = vi.fn();
+    const parser = new JsonlParser(record, 8);
+
+    expect(() => parser.push(Buffer.from("123456789\r\n"))).toThrow(/maximum/i);
+    expect(record).not.toHaveBeenCalled();
+  });
+
+  it("rejects an oversized EOF-terminated record before invoking the callback", () => {
+    const record = vi.fn();
+    const parser = new JsonlParser(record, 1);
+
+    expect(() => {
+      parser.push(Buffer.from([0x31, 0xc3]));
+      parser.end();
+    }).toThrow(/maximum/i);
+    expect(record).not.toHaveBeenCalled();
+  });
+
+  it("counts raw UTF-8 bytes across split multibyte characters", () => {
+    const record = vi.fn();
+    const parser = new JsonlParser(record, 10);
+    const chunk = Buffer.from('"ééééé"\n');
+
+    parser.push(chunk.subarray(0, 2));
+
+    expect(() => parser.push(chunk.subarray(2))).toThrow(/maximum/i);
+    expect(record).not.toHaveBeenCalled();
+  });
+
+  it("accepts a record exactly at the configured raw byte boundary", () => {
+    const record = vi.fn();
+    const parser = new JsonlParser(record, 8);
+
+    parser.push(Buffer.from("12345678\n"));
+
+    expect(record).toHaveBeenCalledTimes(1);
+    expect(record).toHaveBeenCalledWith(12_345_678);
+  });
+
+  it("accepts a CRLF record split at the configured raw byte boundary", () => {
+    const record = vi.fn();
+    const parser = new JsonlParser(record, 8);
+
+    parser.push(Buffer.from("12345678\r"));
+    parser.push(Buffer.from("\n"));
+
+    expect(record).toHaveBeenCalledTimes(1);
+    expect(record).toHaveBeenCalledWith(12_345_678);
+  });
+
   it("rejects records over the configured bound", () => {
     const parser = new JsonlParser(() => undefined, 8);
     expect(() => parser.push(Buffer.from("123456789"))).toThrow(/maximum/i);
