@@ -23,88 +23,82 @@ afterEach(() => {
 });
 
 describe("CodexUsageClient", () => {
-  it.runIf(process.platform !== "win32")(
-    "reads Pi OAuth in memory and returns Codex subscription windows",
-    async () => {
-      const directory = agentDirectory();
-      const access = jwt("account-123");
-      fs.writeFileSync(
-        path.join(directory, "auth.json"),
-        JSON.stringify({ "openai-codex": { type: "oauth", access, refresh: "never-read", expires: 1 } }),
-        { mode: 0o600 },
-      );
-      const request = vi.fn<typeof fetch>(
-        async () =>
-          new Response(
-            JSON.stringify({
-              rate_limit: {
-                primary_window: {
-                  used_percent: 18.4,
-                  limit_window_seconds: 18_000,
-                  reset_after_seconds: 300,
-                },
-                secondary_window: {
-                  used_percent: 42,
-                  limit_window_seconds: 604_800,
-                  reset_at: 2_000_000_000,
-                },
-              },
-            }),
-            { status: 200 },
-          ),
-      );
-
-      await expect(new CodexUsageClient(directory, request).getUsage()).resolves.toMatchObject({
-        provider: "codex",
-        windows: [
-          { usedPercent: 18, windowSeconds: 18_000 },
-          { usedPercent: 42, windowSeconds: 604_800, resetAt: 2_000_000_000 },
-        ],
-      });
-      expect(request).toHaveBeenCalledOnce();
-      const [url, options] = request.mock.calls[0] ?? [];
-      expect(url).toBe("https://chatgpt.com/backend-api/wham/usage");
-      const headers = new Headers(options?.headers);
-      expect(headers.get("Authorization")).toBe(`Bearer ${access}`);
-      expect(headers.get("ChatGPT-Account-Id")).toBe("account-123");
-    },
-  );
-
-  it.runIf(process.platform !== "win32")("fails safely when Pi has no Codex OAuth credential", async () => {
+  it("reads Pi OAuth in memory and returns Codex subscription windows on POSIX hosts", async () => {
     const directory = agentDirectory();
-    fs.writeFileSync(path.join(directory, "auth.json"), JSON.stringify({}), { mode: 0o600 });
-    const request = vi.fn();
+    const access = jwt("account-123");
+    fs.writeFileSync(
+      path.join(directory, "auth.json"),
+      JSON.stringify({ "openai-codex": { type: "oauth", access, refresh: "never-read", expires: 1 } }),
+      { mode: 0o600 },
+    );
+    const request = vi.fn<typeof fetch>(
+      async () =>
+        new Response(
+          JSON.stringify({
+            rate_limit: {
+              primary_window: {
+                used_percent: 18.4,
+                limit_window_seconds: 18_000,
+                reset_after_seconds: 300,
+              },
+              secondary_window: {
+                used_percent: 42,
+                limit_window_seconds: 604_800,
+                reset_at: 2_000_000_000,
+              },
+            },
+          }),
+          { status: 200 },
+        ),
+    );
 
-    await expect(new CodexUsageClient(directory, request).getUsage()).rejects.toThrow(/no Codex OAuth/i);
-    expect(request).not.toHaveBeenCalled();
-  });
-
-  it.runIf(process.platform !== "win32")(
-    "refuses Pi OAuth credentials with group or world permissions",
-    async () => {
-      const directory = agentDirectory();
-      fs.writeFileSync(path.join(directory, "auth.json"), JSON.stringify({}), { mode: 0o644 });
-      fs.chmodSync(path.join(directory, "auth.json"), 0o644);
-      const request = vi.fn();
-
-      await expect(new CodexUsageClient(directory, request).getUsage()).rejects.toThrow(
-        /unsafe permissions/i,
-      );
-      expect(request).not.toHaveBeenCalled();
-    },
-  );
-
-  it.runIf(process.platform === "win32")(
-    "refuses Codex OAuth usage when POSIX credential permissions cannot be verified",
-    async () => {
-      const directory = agentDirectory();
-      fs.writeFileSync(path.join(directory, "auth.json"), JSON.stringify({}), { mode: 0o600 });
-      const request = vi.fn();
-
+    if (process.platform === "win32") {
       await expect(new CodexUsageClient(directory, request).getUsage()).rejects.toThrow(
         /POSIX permission validation is unsupported on Windows/i,
       );
       expect(request).not.toHaveBeenCalled();
-    },
-  );
+      return;
+    }
+
+    await expect(new CodexUsageClient(directory, request).getUsage()).resolves.toMatchObject({
+      provider: "codex",
+      windows: [
+        { usedPercent: 18, windowSeconds: 18_000 },
+        { usedPercent: 42, windowSeconds: 604_800, resetAt: 2_000_000_000 },
+      ],
+    });
+    expect(request).toHaveBeenCalledOnce();
+    const [url, options] = request.mock.calls[0] ?? [];
+    expect(url).toBe("https://chatgpt.com/backend-api/wham/usage");
+    const headers = new Headers(options?.headers);
+    expect(headers.get("Authorization")).toBe(`Bearer ${access}`);
+    expect(headers.get("ChatGPT-Account-Id")).toBe("account-123");
+  });
+
+  it("fails safely when Pi has no Codex OAuth credential", async () => {
+    const directory = agentDirectory();
+    fs.writeFileSync(path.join(directory, "auth.json"), JSON.stringify({}), { mode: 0o600 });
+    const request = vi.fn();
+
+    await expect(new CodexUsageClient(directory, request).getUsage()).rejects.toThrow(
+      process.platform === "win32"
+        ? /POSIX permission validation is unsupported on Windows/i
+        : /no Codex OAuth/i,
+    );
+    expect(request).not.toHaveBeenCalled();
+  });
+
+  it("refuses Pi OAuth credentials with group or world permissions", async () => {
+    const directory = agentDirectory();
+    fs.writeFileSync(path.join(directory, "auth.json"), JSON.stringify({}), { mode: 0o644 });
+    fs.chmodSync(path.join(directory, "auth.json"), 0o644);
+    const request = vi.fn();
+
+    await expect(new CodexUsageClient(directory, request).getUsage()).rejects.toThrow(
+      process.platform === "win32"
+        ? /POSIX permission validation is unsupported on Windows/i
+        : /unsafe permissions/i,
+    );
+    expect(request).not.toHaveBeenCalled();
+  });
 });
