@@ -2,9 +2,9 @@
 
 ## Status
 
-**MVP happy path implemented and live-validated; the active 1.0 control-plane branch adds resource, model, project lifecycle, dashboard, Git, upload, job, repair, backup, MCP-status, system-status, and Discord update commands.**
+**MVP happy path implemented and live-validated; the active `fix/audit-reliability` branch hardens the 1.0 control-plane work before release.**
 
-The base MVP was validated on a real Linux/systemd VM, Discord guild, and authenticated Pi provider. The current `feat/resource-management` branch is automated-test validated locally but still requires a full live Discord/systemd regression test before release.
+The base MVP was validated on a real Linux/systemd VM, Discord guild, and authenticated Pi provider. The current audit branch is locally validated on Windows and still requires the feature-branch CI Linux matrix and a full live Discord/systemd regression test before release.
 
 ## Implemented in the base MVP
 
@@ -22,7 +22,7 @@ The base MVP was validated on a real Linux/systemd VM, Discord guild, and authen
 - non-root systemd unit, installation documentation, and an interactive idempotent `sudo ./scripts/install.sh` installer with protected credential input and rollback copies;
 - Discord startup waits for `ClientReady`, documents the required channel/role permissions, and reports missing setup permissions clearly.
 
-## Implemented on `feat/resource-management`
+## Implemented in the current 1.0 branch line
 
 - managed Pi package resources through `/resource add`, `/resource list`, and `/resource remove`;
 - resource scopes: `global` and `project`;
@@ -43,7 +43,7 @@ The base MVP was validated on a real Linux/systemd VM, Discord guild, and authen
 - backup guidance through `/backup status`;
 - MCP capability status through `/mcp status`;
 - runtime status through `/system status`;
-- Discord-triggered update check/apply through `/system update-check` and `/system update-apply confirm:UPDATE`.
+- Discord-triggered update check through `/system update-check`; updater application remains an operator-controlled manual procedure unless a host deliberately authorizes a reviewed root helper.
 
 See [`DISCORD_COMMANDS.md`](DISCORD_COMMANDS.md) for command usage and security notes.
 
@@ -51,13 +51,15 @@ See [`DISCORD_COMMANDS.md`](DISCORD_COMMANDS.md) for command usage and security 
 
 The suite uses real temporary SQLite databases, real temporary filesystems and local Git repositories, controlled child processes, fake application ports, and a protocol-faithful fake Pi process. A read-only handshake was also executed against installed Pi `0.85.1` using an empty temporary Pi configuration; detection and `get_available_models` RPC succeeded without invoking a model.
 
-Current branch automated validation:
+Current branch automated validation records local command results only; they do not prove that a deployment, live Discord regression, or Linux CI run has completed.
 
-- `npm run check` passes;
-- 23 test files pass;
-- 126 tests pass;
+- `npm run check` passes on Windows;
+- 31 test files pass;
+- 173 tests pass;
 - format, strict lint, typecheck, Vitest, and production build pass;
-- `git diff --check` passes.
+- `npm run test:coverage` passes on Windows;
+- `npm audit --audit-level=moderate` reports 0 vulnerabilities;
+- feature-branch push CI is configured for Ubuntu and Windows Node 22/24, but the Linux matrix is pending until the lead pushes this branch.
 
 ## Live evidence
 
@@ -80,9 +82,9 @@ The live exercise exposed and resolved incorrect application artifact modes, inh
 - validate Unicode project-status channel renames against the live Discord guild;
 - validate `/project delete` on a disposable project and confirm dirty-Git protection;
 - validate `/files upload` from Discord with normal and rejected paths;
-- validate `/system update-check` and decide whether to authorize `/system update-apply` via a root helper or sudoers;
+- validate `/system update-check` and keep update application as a manual operator procedure unless a reviewed root helper/sudoers rule is explicitly authorized for a personal test host;
 - validate HTTPS/SSH cloning and `/git link` against real remotes using service-account credentials;
 - record `systemd-analyze security` output;
-- capture and restore a real backup from `/backup status` guidance.
+- capture and restore a real backup from `/backup status` guidance, including stopping the service, copying `/var/lib/harnesshub` and the workspace root, restoring them to a disposable host or state directory, verifying ownership/modes, starting the service, and checking `/repair status`, `/backup status`, and a disposable project before trusting the backup.
 
 The current state is **Validated with reservations**: automated checks are green, the MVP happy path has live evidence, and new 1.0-oriented commands require operator live validation.
