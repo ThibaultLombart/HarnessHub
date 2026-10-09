@@ -61,7 +61,7 @@ export class ProjectDeletionBlockedError extends Error {
   }
 }
 
-const maximumUploadBytes = 5 * 1024 * 1024;
+export const maximumUploadBytes = 5 * 1024 * 1024;
 
 export { ProjectArchivedError };
 
@@ -114,6 +114,8 @@ export class HarnessHubApplication {
   }
 
   private readonly discord: DiscordResources;
+
+  public readonly maximumUploadBytes = maximumUploadBytes;
 
   public async setup(actor: Actor): Promise<GuildWorkspace> {
     this.harness.authorize(actor);
@@ -260,8 +262,7 @@ export class HarnessHubApplication {
     actor: Actor & { channelId: string },
     input: { relativePath: string; content: Uint8Array },
   ): Promise<string> {
-    const project = this.activeProjectForChannel(actor);
-    if (!(await this.projectResourcesMatch(project))) throw new ProjectDegradedError();
+    const project = await this.preflightProjectFileUpload(actor, input.content.byteLength);
     return this.runJob(
       "upload-file",
       () =>
@@ -273,6 +274,16 @@ export class HarnessHubApplication {
         }),
       project.id,
     );
+  }
+
+  public async preflightProjectFileUpload(
+    actor: Actor & { channelId: string },
+    declaredBytes: number,
+  ): Promise<Project> {
+    const project = this.activeProjectForChannel(actor);
+    if (declaredBytes > maximumUploadBytes) throw new Error("Uploaded file is too large");
+    if (!(await this.projectResourcesMatch(project))) throw new ProjectDegradedError();
+    return project;
   }
 
   public async gitStatus(actor: Actor & { channelId: string }): Promise<GitProjectStatus> {
