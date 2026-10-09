@@ -35,7 +35,7 @@ export class ProjectFiles {
   }
 
   public async removeProject(destination: string): Promise<void> {
-    this.assertInsideRoot(destination);
+    await this.assertDirectProjectChild(destination);
     await fs.rm(destination, { recursive: true, force: true });
   }
 
@@ -56,19 +56,13 @@ export class ProjectFiles {
     if (path.isAbsolute(input.relativePath) || input.relativePath.split(/[\\/]+/).includes("..")) {
       throw new Error("Upload path must stay inside the project");
     }
-    const canonicalProject = await fs.realpath(input.projectPath);
-    this.assertInsideRoot(canonicalProject);
+    const canonicalProject = await this.assertExistingProjectDirectory(input.projectPath);
     const destination = path.resolve(canonicalProject, input.relativePath);
     const relative = path.relative(canonicalProject, destination);
     if (relative === "" || relative.startsWith("..") || path.isAbsolute(relative)) {
       throw new Error("Upload path must stay inside the project");
     }
-    await fs.mkdir(path.dirname(destination), { recursive: true, mode: 0o700 });
-    const canonicalParent = await fs.realpath(path.dirname(destination));
-    const parentRelative = path.relative(canonicalProject, canonicalParent);
-    if (parentRelative.startsWith("..") || path.isAbsolute(parentRelative)) {
-      throw new Error("Upload path escapes the project through a symlink");
-    }
+    await this.ensureSafeUploadParent(canonicalProject, path.dirname(relative));
     try {
       await fs.writeFile(destination, input.content, { flag: "wx", mode: 0o600 });
     } catch (error) {
@@ -84,7 +78,7 @@ export class ProjectFiles {
     destination: string,
     populate: (temporary: string) => Promise<void>,
   ): Promise<void> {
-    this.assertInsideRoot(destination);
+    await this.assertDirectProjectChild(destination);
     try {
       await fs.lstat(destination);
       throw new Error("Project destination already exists");
@@ -103,16 +97,63 @@ export class ProjectFiles {
     }
   }
 
-  private assertInsideRoot(destination: string): void {
+  private async assertDirectProjectChild(destination: string): Promise<string> {
     const resolved = path.resolve(destination);
-    const relative = path.relative(this.canonicalRoot, resolved);
-    if (
-      relative === "" ||
-      relative.startsWith("..") ||
-      path.isAbsolute(relative) ||
-      path.dirname(resolved) !== this.canonicalRoot
-    ) {
+    if (path.basename(resolved) === "") {
       throw new Error("Project destination is outside the workspace root");
+    }
+    let canonicalParent: string;
+    try {
+      canonicalParent = await fs.realpath(path.dirname(resolved));
+    } catch (error) {
+      if (isMissing(error))
+        throw new Error("Project destination is outside the workspace root", { cause: error });
+      throw error;
+    }
+    if (!samePath(canonicalParent, this.canonicalRoot)) {
+      throw new Error("Project destination is outside the workspace root");
+    }
+    return path.join(this.canonicalRoot, path.basename(resolved));
+  }
+
+  private async assertExistingProjectDirectory(projectPath: string): Promise<string> {
+    const statistics = await fs.lstat(projectPath);
+    if (!statistics.isDirectory() || statistics.isSymbolicLink()) {
+      throw new Error("Project destination is outside the workspace root");
+    }
+    const canonicalProject = await fs.realpath(projectPath);
+    await this.assertDirectProjectChild(canonicalProject);
+    return canonicalProject;
+  }
+
+  private async ensureSafeUploadParent(canonicalProject: string, relativeParent: string): Promise<void> {
+    if (relativeParent === "") return;
+    let current = canonicalProject;
+    for (const segment of relativeParent.split(path.sep)) {
+      const next = path.join(current, segment);
+      await this.ensureSafeUploadDirectory(next, canonicalProject);
+      current = await fs.realpath(next);
+    }
+  }
+
+  private async ensureSafeUploadDirectory(directory: string, canonicalProject: string): Promise<void> {
+    try {
+      const statistics = await fs.lstat(directory);
+      if (!statistics.isDirectory() || statistics.isSymbolicLink()) {
+        throw new Error("Upload path escapes the project through a symlink");
+      }
+    } catch (error) {
+      if (!isMissing(error)) throw error;
+      await fs.mkdir(directory, { mode: 0o700 });
+      const statistics = await fs.lstat(directory);
+      if (!statistics.isDirectory() || statistics.isSymbolicLink()) {
+        throw new Error("Upload path escapes the project through a symlink");
+      }
+    }
+    const canonicalDirectory = await fs.realpath(directory);
+    const relative = path.relative(canonicalProject, canonicalDirectory);
+    if (relative.startsWith("..") || path.isAbsolute(relative)) {
+      throw new Error("Upload path escapes the project through a symlink");
     }
   }
 
@@ -124,6 +165,10 @@ export class ProjectFiles {
       env: { ...process.env, GIT_TERMINAL_PROMPT: "0" },
     });
   }
+}
+
+function samePath(left: string, right: string): boolean {
+  return process.platform === "win32" ? left.toLowerCase() === right.toLowerCase() : left === right;
 }
 
 function isMissing(error: unknown): boolean {

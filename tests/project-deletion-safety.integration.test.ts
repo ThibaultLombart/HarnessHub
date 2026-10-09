@@ -138,9 +138,7 @@ async function createDeletionFixture(slug: string) {
   };
   const database = Database.open(config.databasePath);
   const files = await ProjectFiles.create(workspaceRoot);
-  vi.spyOn(files, "removeProject").mockImplementation(async (destination) => {
-    await fs.promises.rm(destination, { recursive: true, force: true });
-  });
+  vi.spyOn(files, "removeProject");
   const now = new Date().toISOString();
   const workspace = {
     id: "workspace-id",

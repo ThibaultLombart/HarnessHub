@@ -627,20 +627,22 @@ async function isDirectory(target: string): Promise<boolean> {
 
 async function isSafeProjectDirectory(target: string, canonicalRoot: string): Promise<boolean> {
   try {
+    const canonicalWorkspaceRoot = await fs.realpath(canonicalRoot);
     const statistics = await fs.lstat(target);
     if (!statistics.isDirectory() || statistics.isSymbolicLink()) return false;
     const canonicalTarget = await fs.realpath(target);
-    const relative = path.relative(canonicalRoot, canonicalTarget);
+    const canonicalParent = await fs.realpath(path.dirname(canonicalTarget));
     return (
-      relative !== "" &&
-      !relative.startsWith("..") &&
-      !path.isAbsolute(relative) &&
-      path.dirname(canonicalTarget) === canonicalRoot
+      !samePath(canonicalTarget, canonicalWorkspaceRoot) && samePath(canonicalParent, canonicalWorkspaceRoot)
     );
   } catch (error) {
     if (error instanceof Error && "code" in error && error.code === "ENOENT") return false;
     throw error;
   }
+}
+
+function samePath(left: string, right: string): boolean {
+  return process.platform === "win32" ? left.toLowerCase() === right.toLowerCase() : left === right;
 }
 
 async function isGitDirty(cwd: string): Promise<boolean> {
