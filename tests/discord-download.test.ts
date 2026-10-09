@@ -6,12 +6,14 @@ const servers: http.Server[] = [];
 
 afterEach(async () => {
   await Promise.all(
-    servers.splice(0).map(
-      (server) =>
-        new Promise<void>((resolve, reject) =>
-          server.close((error) => (error === undefined ? resolve() : reject(error))),
-        ),
-    ),
+    servers
+      .splice(0)
+      .map(
+        (server) =>
+          new Promise<void>((resolve, reject) =>
+            server.close((error) => (error === undefined ? resolve() : reject(error))),
+          ),
+      ),
   );
 });
 

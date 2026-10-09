@@ -33,9 +33,9 @@ describe("archived project inactive boundary", () => {
     const jobsBefore = database.jobs.listRecent(100).length;
     const statusUpdatesBefore = updateProjectStatus.mock.calls.length;
 
-    await expect(
-      app.prompt({ ...archivedActor, content: "do work" }, () => undefined),
-    ).rejects.toThrow(ProjectArchivedError);
+    await expect(app.prompt({ ...archivedActor, content: "do work" }, () => undefined)).rejects.toThrow(
+      ProjectArchivedError,
+    );
     await expect(app.resume(actor, project.id, () => undefined)).rejects.toThrow(ProjectArchivedError);
     await expect(
       app.restartProjectSession(archivedActor, { confirm: "RESTART" }, () => undefined),
@@ -49,9 +49,9 @@ describe("archived project inactive boundary", () => {
     await expect(
       app.installResource(archivedActor, { scope: "project", source: "npm:after-archive" }),
     ).rejects.toThrow(ProjectArchivedError);
-    await expect(
-      app.removeResource(archivedActor, { id: resourceId, scope: "project" }),
-    ).rejects.toThrow(ProjectArchivedError);
+    await expect(app.removeResource(archivedActor, { id: resourceId, scope: "project" })).rejects.toThrow(
+      ProjectArchivedError,
+    );
     await expect(app.setProjectModel(archivedActor, { model: "fake/model" })).rejects.toThrow(
       ProjectArchivedError,
     );
@@ -81,7 +81,9 @@ describe("archived project inactive boundary", () => {
     expect(app.projectForChannel(archivedActor).archivedAt).not.toBeNull();
     await expect(app.projectStatus(archivedActor)).resolves.toContain("HarnessHub / Archive Me");
     await expect(app.gitStatus(archivedActor)).resolves.toMatchObject({ clean: true });
-    expect(app.listResources(archivedActor).map((resource) => resource.source)).toContain("npm:before-archive");
+    expect(app.listResources(archivedActor).map((resource) => resource.source)).toContain(
+      "npm:before-archive",
+    );
     expect(app.modelStatus(archivedActor)).toMatchObject({ provider: "fake", modelId: "model" });
     expect(app.projectModelLabel(archivedActor)).toBe("fake/model");
     await expect(app.listModels(archivedActor)).resolves.toEqual([
@@ -106,7 +108,9 @@ async function createArchivedFixture(): Promise<{
   project: Project;
   adapter: HarnessAdapter;
   database: Database;
-  updateProjectStatus: ReturnType<typeof vi.fn<(project: Project, status: ProjectWorkStatus) => Promise<void>>>;
+  updateProjectStatus: ReturnType<
+    typeof vi.fn<(project: Project, status: ProjectWorkStatus) => Promise<void>>
+  >;
   resourceId: string;
 }> {
   const root = temporaryRoot();
@@ -170,7 +174,10 @@ async function createArchivedFixture(): Promise<{
   const actor = { guildId: config.discordGuildId, userId: config.discordAdminUserId };
 
   await app.setup(actor);
-  const createdProject = await app.createProject({ ...actor, channelId: "management" }, { name: "Archive Me" });
+  const createdProject = await app.createProject(
+    { ...actor, channelId: "management" },
+    { name: "Archive Me" },
+  );
   const resource = await app.installResource(
     { ...actor, channelId: createdProject.channelId },
     { scope: "project", source: "npm:before-archive" },

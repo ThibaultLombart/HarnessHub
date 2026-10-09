@@ -20,10 +20,7 @@ import type { HarnessEvent } from "../../domain/harness.js";
 import type { ModelDescriptor } from "../../domain/model.js";
 import type { HarnessResource, ResourceScope } from "../../domain/resource.js";
 import { SessionProgress } from "../../domain/session-progress.js";
-import {
-  downloadTrustedDiscordAttachment,
-  type TrustedDiscordDownloadOptions,
-} from "./trusted-download.js";
+import { downloadTrustedDiscordAttachment, type TrustedDiscordDownloadOptions } from "./trusted-download.js";
 
 const progressUpdateIntervalMs = 15_000;
 const stalledProgressAfterMs = 120_000;

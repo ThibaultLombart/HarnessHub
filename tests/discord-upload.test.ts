@@ -88,7 +88,10 @@ describe("Discord file upload command", () => {
         application: fixture.app,
         actor: fixture.actor,
         channelId: fixture.project.channelId,
-        attachment: { url: "https://cdn.discordapp.test/large.bin", size: fixture.app.maximumUploadBytes + 1 },
+        attachment: {
+          url: "https://cdn.discordapp.test/large.bin",
+          size: fixture.app.maximumUploadBytes + 1,
+        },
         relativePath: "too-large.bin",
         download,
       }),

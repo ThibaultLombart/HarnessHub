@@ -147,7 +147,7 @@ export class ProjectFiles {
       await fs.mkdir(directory, { mode: 0o700 });
       const statistics = await fs.lstat(directory);
       if (!statistics.isDirectory() || statistics.isSymbolicLink()) {
-        throw new Error("Upload path escapes the project through a symlink");
+        throw new Error("Upload path escapes the project through a symlink", { cause: error });
       }
     }
     const canonicalDirectory = await fs.realpath(directory);
