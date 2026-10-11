@@ -98,7 +98,7 @@ The supported update path is manual and explicit:
 
 ```bash
 cd /path/to/trusted/HarnessHub
-git fetch --ff-only origin
+git fetch origin
 git status --short
 git merge --ff-only origin/main
 npm ci --ignore-scripts
