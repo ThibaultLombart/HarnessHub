@@ -110,7 +110,7 @@ export class ProjectFiles {
         throw new Error("Project destination is outside the workspace root", { cause: error });
       throw error;
     }
-    if (!samePath(canonicalParent, this.canonicalRoot)) {
+    if (samePath(resolved, this.canonicalRoot) || !samePath(canonicalParent, this.canonicalRoot)) {
       throw new Error("Project destination is outside the workspace root");
     }
     return path.join(this.canonicalRoot, path.basename(resolved));
