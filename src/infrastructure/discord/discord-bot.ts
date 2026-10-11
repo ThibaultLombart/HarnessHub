@@ -20,6 +20,7 @@ import type { HarnessEvent } from "../../domain/harness.js";
 import type { ModelDescriptor } from "../../domain/model.js";
 import type { HarnessResource, ResourceScope } from "../../domain/resource.js";
 import { SessionProgress } from "../../domain/session-progress.js";
+import { downloadTrustedDiscordAttachment, type TrustedDiscordDownloadOptions } from "./trusted-download.js";
 
 const progressUpdateIntervalMs = 15_000;
 const stalledProgressAfterMs = 120_000;
@@ -394,14 +395,14 @@ export class DiscordBot {
         );
       } else if (interaction.commandName === "files") {
         const attachment = interaction.options.getAttachment("attachment", true);
-        const response = await fetch(attachment.url);
-        if (!response.ok) throw new Error("Could not download Discord attachment");
-        const content = new Uint8Array(await response.arrayBuffer());
         const relativePath = interaction.options.getString("path", true);
-        await this.application.uploadProjectFile(
-          { ...actor, channelId: interaction.channelId },
-          { relativePath, content },
-        );
+        await handleDiscordFileUpload({
+          application: this.application,
+          actor,
+          channelId: interaction.channelId,
+          attachment,
+          relativePath,
+        });
         await interaction.editReply(`Uploaded file to ${relativePath}.`);
       } else if (interaction.commandName === "git") {
         const subcommand = interaction.options.getSubcommand();
@@ -618,11 +619,49 @@ export class DiscordBot {
   }
 }
 
+export type DiscordUploadAttachment = {
+  readonly url: string;
+  readonly size: number;
+};
+
+export async function handleDiscordFileUpload(input: {
+  readonly application: HarnessHubApplication;
+  readonly actor: { guildId: string; userId: string };
+  readonly channelId: string;
+  readonly attachment: DiscordUploadAttachment;
+  readonly relativePath: string;
+  readonly download?: (
+    url: string,
+    options: Pick<TrustedDiscordDownloadOptions, "maximumBytes">,
+  ) => Promise<Uint8Array>;
+}): Promise<string> {
+  const actor = { ...input.actor, channelId: input.channelId };
+  await input.application.preflightProjectFileUpload(actor, input.attachment.size);
+  const maximumBytes = input.application.maximumUploadBytes;
+  const content = await (input.download ?? downloadTrustedDiscordAttachment)(input.attachment.url, {
+    maximumBytes,
+  });
+  await input.application.uploadProjectFile(actor, { relativePath: input.relativePath, content });
+  return input.relativePath;
+}
+
 function actorFrom(guildId: string | null, userId: string): { guildId: string; userId: string } {
   return { guildId: guildId ?? "", userId };
 }
 
 function formatSystemUpdate(status: SystemUpdateStatus): string {
+  if (status.mode === "installed") {
+    return [
+      "HarnessHub update status",
+      `Deployment: ${status.checkout}`,
+      "Mode: installed artifact (manual-only)",
+      `Inspection: ${status.message}`,
+      "Update comparison: unavailable",
+      "Operator action: run git pull and sudo ./scripts/install.sh --no-pi-login from a trusted Git checkout.",
+      "Discord self-update: disabled by design.",
+    ].join("\n");
+  }
+
   return [
     "HarnessHub update status",
     `Checkout: ${status.checkout}`,
@@ -630,8 +669,10 @@ function formatSystemUpdate(status: SystemUpdateStatus): string {
     `HEAD: ${status.head.slice(0, 12)}`,
     `Upstream: ${status.upstream ?? "none"}`,
     `Upstream HEAD: ${status.upstreamHead?.slice(0, 12) ?? "none"}`,
+    `Upstream freshness: ${status.upstreamFreshness}`,
     `Working tree: ${status.clean ? "clean" : "dirty"}`,
     `Update available: ${status.updateAvailable ? "yes" : "no"}`,
+    "Apply: disabled in Discord; use the manual operator procedure from a trusted checkout.",
   ].join("\n");
 }
 
@@ -761,6 +802,7 @@ export function safeDiscordError(error: unknown): string {
       "ProjectAlreadyExistsError",
       "ProjectDegradedError",
       "ProjectDeletionBlockedError",
+      "ProjectArchivedError",
       "InvalidProjectInputError",
       "InvalidResourceInputError",
       "InvalidModelInputError",

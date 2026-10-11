@@ -58,7 +58,7 @@ sudo install -o root -g harnesshub -m 0640 .env.example /etc/harnesshub/harnessh
 
 Edit `/etc/harnesshub/harnesshub.env` locally. Set the Discord token, guild ID, administrator user ID, absolute workspace path, absolute database path, and the trusted update checkout path. Never paste credentials into Discord or commit this file.
 
-Keep `PI_CODING_AGENT_DIR=/var/lib/harnesshub/pi-agent` in the environment file. This permits systemd to protect home directories while Pi reads its native configuration from writable HarnessHub state. HarnessHub also reads the `openai-codex` OAuth access token from that protected store, only in memory, to update the locked Codex voice counter. The token is never copied into SQLite, Discord, or logs. The usage endpoint is not a documented OpenAI public API, so an upstream change may temporarily produce `Codex : usage unavailable` without affecting Pi sessions. Set `HARNESSHUB_UPDATE_CHECKOUT` to the trusted Git checkout used for operator updates, for example `/home/thibault/HarnessHub` or another root/operator-controlled checkout.
+Keep `PI_CODING_AGENT_DIR=/var/lib/harnesshub/pi-agent` in the environment file. This permits systemd to protect home directories while Pi reads its native configuration from writable HarnessHub state. On Linux, HarnessHub reads the `openai-codex` OAuth access token from that protected store, only in memory and only after verifying restrictive POSIX file permissions, to update the locked Codex voice counter. The token is never copied into SQLite, Discord, or logs. On Windows development machines, usage polling refuses to read the credential because POSIX permissions cannot be verified, and no usage HTTP request is made. The usage endpoint is not a documented OpenAI public API, so an upstream change may temporarily produce `Codex : usage unavailable` without affecting Pi sessions. Set `HARNESSHUB_UPDATE_CHECKOUT` to the trusted Git checkout used for operator updates, for example `/home/thibault/HarnessHub` or another root/operator-controlled checkout.
 
 Install the pinned Pi release without global npm permissions, then authenticate it as the service account using the same agent directory:
 
@@ -90,11 +90,25 @@ sudo systemctl status harnesshub
 
 After the bot is ready, run `/setup` in the configured guild. Run `/project create` from `#workspace-management`, then send a normal message in the created project channel. See [`DISCORD_COMMANDS.md`](DISCORD_COMMANDS.md) for the complete command reference.
 
-### Discord-assisted updates
+### Update procedure
 
-`/system update-check` verifies the trusted checkout without modifying the running installation.
+`/system update-check` verifies the trusted checkout without modifying the running installation. Treat its output as operator guidance, not as deployment proof.
 
-`/system update-apply confirm:UPDATE` performs a fast-forward-only update from that checkout, runs `npm ci`, runs `npm run check`, and then runs:
+The supported update path is manual and explicit:
+
+```bash
+cd /path/to/trusted/HarnessHub
+git fetch origin
+git status --short
+git merge --ff-only origin/main
+npm ci --ignore-scripts
+npm run check
+sudo ./scripts/install.sh --no-pi-login
+```
+
+Use the branch or tag that your operator process has approved instead of `origin/main` when testing a release branch. Do not run the installer from a dirty checkout.
+
+If a personal/test host deliberately enables `/system update-apply confirm:UPDATE`, it must perform a fast-forward-only update from that checkout, run `npm ci --ignore-scripts`, run `npm run check`, and then run:
 
 ```bash
 sudo -n ./scripts/install.sh --no-pi-login
@@ -102,18 +116,25 @@ sudo -n ./scripts/install.sh --no-pi-login
 
 This is intentionally not enabled by broad default privileges. The service account normally runs without root and the systemd unit uses `NoNewPrivileges=true`; depending on host policy this may prevent sudo entirely. To enable Discord-assisted updates for a personal test VM, explicitly authorize only this installer path for the `harnesshub` service account, or replace it with a dedicated root-owned helper. Do not grant broad sudo access.
 
-If update apply is not authorized, the command fails safely and the current service remains running. Manual updates remain:
+If update apply is not authorized, the command fails safely and the current service remains running.
+
+### Backup, rollback, and restore verification
+
+Back up `/var/lib/harnesshub` and the workspace root together while the service is stopped. Keep installer rollback directories under `/opt` until the replacement has been verified.
 
 ```bash
-cd /path/to/trusted/HarnessHub
-sudo ./scripts/install.sh --no-pi-login
+sudo systemctl stop harnesshub
+sudo tar --xattrs --acls -C / -cpf /root/harnesshub-state.tar var/lib/harnesshub srv/harnesshub/workspaces
+sudo systemctl start harnesshub
 ```
+
+To verify a restore, use a disposable host or disposable state paths: stop the service, restore the archive, verify that `/var/lib/harnesshub` and the workspace root are owned by `harnesshub` with restrictive modes, start the service, then check `/repair status`, `/backup status`, and a disposable project flow before trusting the backup for production recovery. If a deployment fails before verification, stop the service, restore the previous `/opt/harnesshub` rollback copy and the matching state backup, reload systemd if the unit changed, start the service, and repeat the same checks. Do not claim a rollback or restore has succeeded until those checks have actually run on the target host.
 
 ### Operational notes
 
 - Do not grant the service account broad sudo access. If Discord-assisted updates are enabled, restrict them to the reviewed installer/helper only.
 - Configure SSH host keys before cloning over SSH; HarnessHub never accepts unknown keys automatically.
 - Configure Git credentials directly for the service account. HarnessHub rejects credentials embedded in URLs.
-- Back up `/var/lib/harnesshub` and the workspace root together while the service is stopped.
+- Back up `/var/lib/harnesshub` and the workspace root together while the service is stopped, and verify restores on disposable state before relying on them.
 - Use `/backup status`, `/repair status`, and `/system status` for operational guidance.
 - Updating, deploying, or enabling this unit remains an explicit operator action unless `/system update-apply` has been deliberately authorized for a personal/test host.

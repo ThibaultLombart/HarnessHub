@@ -37,7 +37,7 @@ Treat as untrusted:
 16. Repository URLs containing credentials are rejected. Clones use only service-account credentials, and unknown SSH host keys are never accepted automatically.
 17. Pi's internal approval configuration does not authorize privileged HarnessHub operations; destructive or hard-to-reverse HarnessHub actions require their own explicit confirmation.
 18. Project deletion requires exact slug confirmation, no active session, and a clean Git worktree.
-19. Discord update apply requires exact confirmation, a clean checkout, fast-forward-only Git update, local checks, and explicit host authorization for installer execution.
+19. Applying an update requires a clean trusted checkout, fast-forward-only Git update, local checks, and explicit operator authorization for installer execution. Discord may report update availability, but install execution is manual unless the host owner deliberately authorizes a reviewed root helper for a personal/test host.
 20. Discord responses avoid returning sensitive absolute server paths when a relative user-facing path is sufficient.
 
 ## Resource and package installation
@@ -52,17 +52,23 @@ Pi has no native MCP capability in the pinned documentation. MCP-like functional
 
 ## Discord-assisted updates
 
-`/system update-apply` is an explicit trust operation. It modifies the trusted checkout, runs dependency installation and checks, and invokes the installer. The service account must not receive broad sudo rights. If update apply is enabled on a personal/test host, restrict authorization to a reviewed root-owned installer/helper path.
+`/system update-check` may inspect the trusted checkout and report whether an update is available. Applying an update remains a trust operation: an operator updates the checkout, runs dependency installation and checks, and invokes the installer from a reviewed path. The service account must not receive broad sudo rights. If a personal/test host later enables Discord-triggered update apply, restrict authorization to a reviewed root-owned installer/helper path and keep fast-forward-only and local-check requirements.
+
+## Codex usage polling
+
+Codex usage polling reads Pi's protected OAuth credential only from `PI_CODING_AGENT_DIR/auth.json`, only in memory, and only after POSIX mode checks prove the file is not group/world accessible. On Linux this permits the locked Codex voice counter to call the unofficial ChatGPT usage endpoint with the native Pi credential. On Windows, HarnessHub refuses usage polling before reading the file because POSIX credential permissions cannot be verified; tests assert that no HTTP request is made in those cases. The endpoint is not a documented OpenAI public API, so upstream shape or authorization changes can make usage unavailable without breaking Pi sessions.
 
 ## MVP isolation limitation
 
 Pi runs as a child of the same non-root service identity as HarnessHub. The systemd unit constrains that identity's host-level writable paths, but Pi is not sandboxed from HarnessHub's own writable database, session, and tool state. The personal MVP must not be exposed to untrusted Discord users or treated as safe execution for hostile repositories. A separate OS identity, container, VM, or policy sandbox is required for a stronger project-to-control-plane boundary.
 
+Filesystem writes use canonicalization and symlink checks immediately before sensitive operations, but they are not a kernel-enforced sandbox and cannot eliminate every time-of-check/time-of-use race against a hostile same-UID process. Do not run untrusted code as the `harnesshub` service identity; use stronger OS isolation before accepting hostile repositories, tools, or users.
+
 ## Surfaces requiring the `security` subagent
 
 - Discord permissions/roles;
 - provider/GitHub/GitLab authentication;
-- Codex usage polling reads Pi's protected OAuth credential only in memory and never persists or logs token material;
+- Codex usage polling reads Pi's protected OAuth credential only in memory, refuses Windows permission checks, and never persists or logs token material;
 - Pi process restart is project-scoped, administrator-only, refuses active prompts, and requires the literal `RESTART` confirmation;
 - `child_process` / shell execution;
 - filesystem, symlinks, uploads, ZIP archives;

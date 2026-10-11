@@ -1,8 +1,9 @@
 import { StringDecoder } from "node:string_decoder";
 
 export class JsonlParser {
-  private readonly decoder = new StringDecoder("utf8");
+  private decoder = new StringDecoder("utf8");
   private buffer = "";
+  private recordBytes = 0;
 
   public constructor(
     private readonly onRecord: (record: unknown) => void,
@@ -10,30 +11,40 @@ export class JsonlParser {
   ) {}
 
   public push(chunk: Buffer): void {
-    this.buffer += this.decoder.write(chunk);
-    this.drain(false);
-    this.assertBound();
+    let recordStart = 0;
+    let newline = chunk.indexOf(0x0a, recordStart);
+
+    while (newline >= 0) {
+      this.appendRecordBytes(chunk.subarray(recordStart, newline));
+      this.completeRecord();
+      recordStart = newline + 1;
+      newline = chunk.indexOf(0x0a, recordStart);
+    }
+
+    this.appendRecordBytes(chunk.subarray(recordStart));
   }
 
   public end(): void {
     this.buffer += this.decoder.end();
-    this.drain(true);
+    this.assertBound();
+    if (this.buffer !== "") this.completeRecord();
+  }
+
+  private appendRecordBytes(bytes: Buffer): void {
+    if (bytes.length === 0) return;
+    this.recordBytes += bytes.length;
+    this.buffer += this.decoder.write(bytes);
     this.assertBound();
   }
 
-  private drain(flush: boolean): void {
-    let newline = this.buffer.indexOf("\n");
-    while (newline >= 0) {
-      const line = stripCarriageReturn(this.buffer.slice(0, newline));
-      this.buffer = this.buffer.slice(newline + 1);
-      this.parseLine(line);
-      newline = this.buffer.indexOf("\n");
-    }
-    if (flush && this.buffer !== "") {
-      const line = stripCarriageReturn(this.buffer);
-      this.buffer = "";
-      this.parseLine(line);
-    }
+  private completeRecord(): void {
+    this.buffer += this.decoder.end();
+    this.assertBound();
+    const line = stripCarriageReturn(this.buffer);
+    this.buffer = "";
+    this.recordBytes = 0;
+    this.decoder = new StringDecoder("utf8");
+    this.parseLine(line);
   }
 
   private parseLine(line: string): void {
@@ -41,9 +52,13 @@ export class JsonlParser {
   }
 
   private assertBound(): void {
-    if (Buffer.byteLength(this.buffer, "utf8") > this.maximumRecordBytes) {
+    if (this.effectiveRecordBytes() > this.maximumRecordBytes) {
       throw new Error("RPC record exceeds maximum size");
     }
+  }
+
+  private effectiveRecordBytes(): number {
+    return this.buffer.endsWith("\r") ? this.recordBytes - 1 : this.recordBytes;
   }
 }
 

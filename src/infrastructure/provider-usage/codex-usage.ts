@@ -78,6 +78,9 @@ export class CodexUsageClient {
 
   private async readCredential(): Promise<{ access: string }> {
     const authPath = path.join(this.piAgentDirectory, "auth.json");
+    if (process.platform === "win32") {
+      throw new Error("Pi authentication store POSIX permission validation is unsupported on Windows");
+    }
     const statistics = await fs.stat(authPath);
     if (!statistics.isFile() || statistics.size > 1024 * 1024 || (statistics.mode & 0o077) !== 0) {
       throw new Error("Pi authentication store is unavailable or has unsafe permissions");

@@ -1,14 +1,41 @@
 import fs from "node:fs";
 import path from "node:path";
-import { execFileSync } from "node:child_process";
+import { execFileSync, spawnSync } from "node:child_process";
 import { describe, expect, it } from "vitest";
 
 const installer = path.resolve("scripts", "install.sh");
 
+function findBash(): string {
+  if (process.platform !== "win32") return "bash";
+
+  const candidates = [
+    process.env.GIT_BASH,
+    "C:\\Program Files\\Git\\bin\\bash.exe",
+    "C:\\Program Files (x86)\\Git\\bin\\bash.exe",
+  ].filter((candidate): candidate is string => candidate !== undefined && candidate.length > 0);
+
+  for (const candidate of candidates) {
+    if (fs.existsSync(candidate)) return candidate;
+  }
+
+  const git = spawnSync("where.exe", ["git"], { encoding: "utf8" });
+  const gitPath = git.stdout
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .find((line) => line.length > 0);
+  if (gitPath !== undefined) {
+    const bash = path.resolve(path.dirname(gitPath), "..", "bin", "bash.exe");
+    if (fs.existsSync(bash)) return bash;
+  }
+
+  throw new Error("Git Bash is required to validate scripts/install.sh on Windows");
+}
+
 describe("Linux installer", () => {
   it("is valid Bash and exposes help without requiring root", () => {
-    execFileSync("bash", ["-n", installer]);
-    const help = execFileSync("bash", [installer, "--help"], { encoding: "utf8" });
+    const bash = findBash();
+    execFileSync(bash, ["-n", installer]);
+    const help = execFileSync(bash, [installer, "--help"], { encoding: "utf8" });
     expect(help).toContain("sudo ./scripts/install.sh");
     expect(help).toContain("--no-start");
   });

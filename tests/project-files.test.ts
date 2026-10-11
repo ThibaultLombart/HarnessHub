@@ -17,6 +17,37 @@ afterEach(() => {
 });
 
 describe("ProjectFiles", () => {
+  it("accepts a direct project child reached through a workspace root alias", async () => {
+    const root = temporaryRoot();
+    const aliasParent = temporaryRoot();
+    const workspaceAlias = path.join(aliasParent, "workspace-alias");
+    createDirectoryLink(root, workspaceAlias);
+    const target = path.join(workspaceAlias, "demo");
+    const files = await ProjectFiles.create(workspaceAlias);
+
+    await files.createEmptyGitProject(target);
+
+    expect(fs.statSync(path.join(root, "demo")).isDirectory()).toBe(true);
+  });
+
+  it.each([
+    ["workspace root itself", (root: string) => root],
+    ["outside the workspace", (root: string) => path.resolve(root, "..", "escape")],
+    ["nested below a project child", (root: string) => path.join(root, "demo", "nested")],
+    [
+      "traversal back into a nested project child",
+      (root: string) => path.join(root, "demo", "..", "demo", "nested"),
+    ],
+  ])(
+    "rejects project destination that is not a direct workspace child: %s",
+    async (_name, destinationFor) => {
+      const root = temporaryRoot();
+      const files = await ProjectFiles.create(root);
+
+      await expect(files.createEmptyGitProject(destinationFor(root))).rejects.toThrow(/outside/i);
+    },
+  );
+
   it("atomically initializes a real Git repository inside the workspace", async () => {
     const root = temporaryRoot();
     const target = path.join(root, "demo");
@@ -95,7 +126,7 @@ describe("ProjectFiles", () => {
       maximumBytes: 100,
     });
 
-    expect(written).toBe(path.join(projectPath, "docs", "input.txt"));
+    expect(written).toBe(path.join(fs.realpathSync.native(projectPath), "docs", "input.txt"));
     expect(fs.readFileSync(written, "utf8")).toBe("hello");
     await expect(
       files.writeProjectFile({
@@ -132,7 +163,7 @@ describe("ProjectFiles", () => {
     const files = await ProjectFiles.create(root);
     const projectPath = path.join(root, "demo");
     await files.createEmptyGitProject(projectPath);
-    fs.symlinkSync(outside, path.join(projectPath, "escape"));
+    createDirectoryLink(outside, path.join(projectPath, "escape"));
 
     await expect(
       files.writeProjectFile({
@@ -143,4 +174,47 @@ describe("ProjectFiles", () => {
       }),
     ).rejects.toThrow(/escape/i);
   });
+
+  it("rejects upload escapes through directory links before creating external subdirectories", async () => {
+    const root = temporaryRoot();
+    const outside = temporaryRoot();
+    const files = await ProjectFiles.create(root);
+    const projectPath = path.join(root, "demo");
+    await files.createEmptyGitProject(projectPath);
+    createDirectoryLink(outside, path.join(projectPath, "escape"));
+
+    await expect(
+      files.writeProjectFile({
+        projectPath,
+        relativePath: "escape/created-outside/file.txt",
+        content: new TextEncoder().encode("hello"),
+        maximumBytes: 100,
+      }),
+    ).rejects.toThrow(/escape/i);
+
+    expect(fs.existsSync(path.join(outside, "created-outside"))).toBe(false);
+  });
+
+  it("rejects uploads when the project directory itself is a link escaping the workspace", async () => {
+    const root = temporaryRoot();
+    const outside = temporaryRoot();
+    const files = await ProjectFiles.create(root);
+    const projectPath = path.join(root, "linked-project");
+    createDirectoryLink(outside, projectPath);
+
+    await expect(
+      files.writeProjectFile({
+        projectPath,
+        relativePath: "file.txt",
+        content: new TextEncoder().encode("hello"),
+        maximumBytes: 100,
+      }),
+    ).rejects.toThrow(/outside|escape/i);
+
+    expect(fs.existsSync(path.join(outside, "file.txt"))).toBe(false);
+  });
 });
+
+function createDirectoryLink(target: string, linkPath: string): void {
+  fs.symlinkSync(target, linkPath, process.platform === "win32" ? "junction" : "dir");
+}

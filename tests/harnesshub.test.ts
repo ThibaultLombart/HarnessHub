@@ -6,7 +6,7 @@ import {
   type HarnessHubRepositories,
 } from "../src/application/harness-hub.js";
 import type { HarnessAdapter, HarnessSession } from "../src/domain/harness.js";
-import type { Project } from "../src/domain/project.js";
+import { ProjectArchivedError, type Project } from "../src/domain/project.js";
 
 const project: Project = {
   id: "project",
@@ -52,6 +52,10 @@ function subject(busy = false) {
     session,
     repositories,
   };
+}
+
+function archivedProject(): Project {
+  return { ...project, archivedAt: new Date().toISOString() };
 }
 
 describe("HarnessHub application authorization and prompting", () => {
@@ -138,5 +142,35 @@ describe("HarnessHub application authorization and prompting", () => {
     await expect(
       hub.prompt({ guildId: "guild", userId: "admin", channelId: "other", content: "work" }, vi.fn()),
     ).rejects.toThrow(/not mapped/i);
+  });
+
+  it("rejects archived project prompts before starting or mutating session state", async () => {
+    const { hub, adapter, session, repositories } = subject();
+    vi.mocked(repositories.projects.findByChannelId).mockReturnValue(archivedProject());
+
+    await expect(
+      hub.prompt({ guildId: "guild", userId: "admin", channelId: "channel", content: "work" }, vi.fn()),
+    ).rejects.toThrow(ProjectArchivedError);
+
+    expect(adapter.startSession).not.toHaveBeenCalled();
+    expect(session.sendPrompt).not.toHaveBeenCalled();
+    expect(repositories.sessions.recordStarted).not.toHaveBeenCalled();
+    expect(repositories.sessions.updateStatus).not.toHaveBeenCalled();
+  });
+
+  it("rejects archived direct resume and restart while preserving stop", async () => {
+    const { hub, adapter, repositories } = subject();
+    const actor = { guildId: "guild", userId: "admin" };
+    vi.mocked(repositories.projects.findById).mockReturnValue(archivedProject());
+
+    await expect(hub.resume(actor, project.id, vi.fn())).rejects.toThrow(ProjectArchivedError);
+    await expect(hub.restart(actor, project.id, vi.fn())).rejects.toThrow(ProjectArchivedError);
+    await expect(hub.stop(actor, project.id)).resolves.toBeUndefined();
+
+    expect(adapter.startSession).not.toHaveBeenCalled();
+    expect(adapter.restartSession).not.toHaveBeenCalled();
+    expect(adapter.stopSession).toHaveBeenCalledWith(project.id);
+    expect(repositories.sessions.updateStatus).toHaveBeenCalledTimes(1);
+    expect(repositories.sessions.updateStatus).toHaveBeenCalledWith(project.id, "stopped");
   });
 });

@@ -18,6 +18,17 @@ export class InvalidProjectInputError extends Error {
   }
 }
 
+export class ProjectArchivedError extends Error {
+  public constructor() {
+    super("This project is archived and cannot run or be modified; inspect, stop, or delete it instead");
+    this.name = "ProjectArchivedError";
+  }
+}
+
+export function assertProjectActive(project: Project): void {
+  if (project.archivedAt !== null) throw new ProjectArchivedError();
+}
+
 export function projectSlug(name: string): string {
   const normalizedName = name.trim();
   if (normalizedName.length < 1 || normalizedName.length > 100 || /[\0\r\n]/.test(normalizedName)) {
