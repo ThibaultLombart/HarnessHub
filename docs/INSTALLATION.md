@@ -108,15 +108,7 @@ sudo ./scripts/install.sh --no-pi-login
 
 Use the branch or tag that your operator process has approved instead of `origin/main` when testing a release branch. Do not run the installer from a dirty checkout.
 
-If a personal/test host deliberately enables `/system update-apply confirm:UPDATE`, it must perform a fast-forward-only update from that checkout, run `npm ci --ignore-scripts`, run `npm run check`, and then run:
-
-```bash
-sudo -n ./scripts/install.sh --no-pi-login
-```
-
-This is intentionally not enabled by broad default privileges. The service account normally runs without root and the systemd unit uses `NoNewPrivileges=true`; depending on host policy this may prevent sudo entirely. To enable Discord-assisted updates for a personal test VM, explicitly authorize only this installer path for the `harnesshub` service account, or replace it with a dedicated root-owned helper. Do not grant broad sudo access.
-
-If update apply is not authorized, the command fails safely and the current service remains running.
+`/system update-apply` is intentionally disabled in the application, including on personal/test hosts. Host privileges cannot enable it. Do not grant the service account installer permissions or introduce a privileged update helper. Installation, updates, and rollback are manual operator actions from a reviewed trusted checkout; retain `NoNewPrivileges=true`.
 
 ### Backup, rollback, and restore verification
 
@@ -132,9 +124,9 @@ To verify a restore, use a disposable host or disposable state paths: stop the s
 
 ### Operational notes
 
-- Do not grant the service account broad sudo access. If Discord-assisted updates are enabled, restrict them to the reviewed installer/helper only.
+- Do not grant the service account privileged installer permissions or sudo access.
 - Configure SSH host keys before cloning over SSH; HarnessHub never accepts unknown keys automatically.
 - Configure Git credentials directly for the service account. HarnessHub rejects credentials embedded in URLs.
 - Back up `/var/lib/harnesshub` and the workspace root together while the service is stopped, and verify restores on disposable state before relying on them.
 - Use `/backup status`, `/repair status`, and `/system status` for operational guidance.
-- Updating, deploying, or enabling this unit remains an explicit operator action unless `/system update-apply` has been deliberately authorized for a personal/test host.
+- Installation, updating, rollback, deployment, and enabling this unit remain manual, explicit operator actions; Discord update apply is disabled.

@@ -1,5 +1,17 @@
+import type { UiRequest, UiResponse, SubagentStatus } from "./live-interface.js";
 import type { ModelDescriptor } from "./model.js";
 import type { ResourceScope } from "./resource.js";
+
+export class SessionStoppedError extends Error {
+  public constructor() {
+    super("The Pi operation was stopped");
+    this.name = "SessionStoppedError";
+  }
+}
+
+export function assertOperationActive(signal?: AbortSignal): void {
+  if (signal?.aborted === true) throw new SessionStoppedError();
+}
 
 export class SessionBusyError extends Error {
   public constructor() {
@@ -9,6 +21,11 @@ export class SessionBusyError extends Error {
 }
 
 export type HarnessEvent =
+  | { type: "history-unavailable" }
+  | { type: "ui-request"; sessionId: string; request: UiRequest }
+  | { type: "ui-closed"; sessionId: string; requestId: string }
+  | { type: "public-explanation"; text: string }
+  | { type: "subagents"; agents: readonly SubagentStatus[] }
   | { type: "working" }
   | { type: "agent-start" }
   | { type: "model-selected"; provider: string; modelId: string }
@@ -32,6 +49,7 @@ export type HarnessSession = {
   readonly isBusy: boolean;
   readonly model: Readonly<{ provider: string; id: string }> | null;
   sendPrompt(message: string): Promise<string>;
+  respondUi?(sessionId: string, requestId: string, response: UiResponse): Promise<void>;
   stop(): Promise<void>;
   close(): Promise<void>;
 };
@@ -43,6 +61,7 @@ export type HarnessAdapter = {
   getAuthStatus(cwd: string): Promise<{ authenticated: boolean; providers: readonly string[] }>;
   startSession(input: {
     projectId: string;
+    signal?: AbortSignal;
     cwd: string;
     name: string;
     modelPattern?: string;

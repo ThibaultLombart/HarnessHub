@@ -4,7 +4,7 @@ import packageJson from "../../package.json" with { type: "json" };
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import type { Config } from "../config.js";
-import type { HarnessAdapter, HarnessEvent } from "../domain/harness.js";
+import { assertOperationActive, type HarnessAdapter, type HarnessEvent } from "../domain/harness.js";
 import {
   modelPattern,
   parseModelPattern,
@@ -486,13 +486,10 @@ export class HarnessHubApplication {
     onEvent: (event: HarnessEvent) => void,
   ): Promise<string> {
     const project = this.activeProjectForChannel(actor);
-    if (!(await this.projectResourcesMatch(project))) {
-      await this.projectStatuses.update(project, "blocked");
-      throw new ProjectDegradedError();
-    }
-    await this.projectStatuses.update(project, "working");
     try {
-      const answer = await this.harness.prompt(actor, onEvent);
+      const answer = await this.harness.prompt(actor, onEvent, (signal) =>
+        this.operationPreflight(project, signal),
+      );
       if (!(await this.projectResourcesMatch(project))) throw new ProjectDegradedError();
       await this.projectStatuses.update(project, "idle");
       return answer;
@@ -511,15 +508,13 @@ export class HarnessHubApplication {
   ): Promise<void> {
     const project = this.activeProjectForChannel(actor);
     if (input.confirm !== "RESTART") throw new SessionRestartConfirmationError();
-    if (!(await this.projectResourcesMatch(project))) {
-      await this.projectStatuses.update(project, "blocked");
-      throw new ProjectDegradedError();
-    }
-    await this.projectStatuses.update(project, "working");
     try {
       await this.runJob(
         "restart-session",
-        () => this.harness.restart(actor, project.id, onEvent),
+        () =>
+          this.harness.restart(actor, project.id, onEvent, (signal) =>
+            this.operationPreflight(project, signal),
+          ),
         project.id,
       );
       await this.projectStatuses.update(project, "idle");
@@ -529,6 +524,14 @@ export class HarnessHubApplication {
       await this.projectStatuses.update(project, status);
       throw error;
     }
+  }
+
+  public async respondUi(
+    actor: Actor & { channelId: string; sessionId: string; requestId: string },
+    response: import("../domain/live-interface.js").UiResponse,
+  ): Promise<void> {
+    this.activeProjectForChannel(actor);
+    await this.harness.respondUi(actor, response);
   }
 
   public async stop(actor: Actor, projectId: string): Promise<void> {
@@ -548,13 +551,10 @@ export class HarnessHubApplication {
     const project = this.database.projects.findById(projectId);
     if (project === undefined) throw new Error("Project not found");
     assertProjectActive(project);
-    if (!(await this.projectResourcesMatch(project))) {
-      await this.projectStatuses.update(project, "blocked");
-      throw new ProjectDegradedError();
-    }
-    await this.projectStatuses.update(project, "working");
     try {
-      await this.harness.resume(actor, projectId, onEvent);
+      await this.harness.resume(actor, projectId, onEvent, (signal) =>
+        this.operationPreflight(project, signal),
+      );
       await this.projectStatuses.update(project, "idle");
     } catch (error) {
       await this.projectStatuses.update(project, "blocked");
@@ -573,6 +573,18 @@ export class HarnessHubApplication {
     const project = this.projectForChannel(actor);
     assertProjectActive(project);
     return project;
+  }
+
+  private async operationPreflight(project: Project, signal: AbortSignal): Promise<void> {
+    const valid = await this.projectResourcesMatch(project);
+    assertOperationActive(signal);
+    if (!valid) {
+      await this.projectStatuses.update(project, "blocked");
+      assertOperationActive(signal);
+      throw new ProjectDegradedError();
+    }
+    await this.projectStatuses.update(project, "working");
+    assertOperationActive(signal);
   }
 
   private async projectResourcesMatch(project: Project): Promise<boolean> {

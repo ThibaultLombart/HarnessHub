@@ -177,22 +177,20 @@ Remaining:
 
 Goal: make test/dev updates easier while preserving safety.
 
-Status: **implemented with host-authorization reservation**.
+Status: **read-only update check implemented; update apply intentionally disabled**.
 
 Implemented:
 
-- `/system update-check`;
-- `/system update-apply confirm:UPDATE`;
-- clean checkout requirement;
-- fast-forward-only update;
-- `npm ci`, `npm run check`, installer execution;
-- safe failure when sudo/root host policy does not authorize the operation.
+- `/system update-check` reports trusted-checkout status;
+- `/system update-apply` refuses execution independently of host privileges;
+- manual trusted-checkout installation, update, and rollback guidance with local checks.
 
 Remaining:
 
-- decide and document the production authorization mechanism: sudoers rule or dedicated root-owned helper;
-- live validation on the VM;
-- rollback reporting in Discord after installer failure.
+- live validation of the read-only check on the VM;
+- operator validation of manual installation/update/rollback from a reviewed checkout.
+
+Do not grant the service account privileged installer permissions or add a Discord-triggered root helper.
 
 ## Scope rule
 

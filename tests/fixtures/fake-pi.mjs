@@ -68,6 +68,14 @@ process.stdin.on("data", (chunk) => {
         success: true,
         data: { text: "Fake answer" },
       });
+    } else if (command.type === "clear_queue") {
+      send({
+        id: command.id,
+        type: "response",
+        command: "clear_queue",
+        success: true,
+        data: { steering: [], followUp: [] },
+      });
     } else if (command.type === "abort") {
       send({ id: command.id, type: "response", command: "abort", success: true });
     } else if (command.type === "set_model") {

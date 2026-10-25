@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import {
   ActionRowBuilder,
   ButtonBuilder,
@@ -19,6 +20,11 @@ import type { Job } from "../database.js";
 import type { HarnessEvent } from "../../domain/harness.js";
 import type { ModelDescriptor } from "../../domain/model.js";
 import type { HarnessResource, ResourceScope } from "../../domain/resource.js";
+import { DiscordLiveUi } from "./live-ui.js";
+import { discordContentMaximum, withModelFooter } from "./model-footer.js";
+export { withModelFooter } from "./model-footer.js";
+import { escapeMarkdownText } from "../../domain/display-text.js";
+import { publicText } from "../../domain/live-interface.js";
 import { SessionProgress } from "../../domain/session-progress.js";
 import { downloadTrustedDiscordAttachment, type TrustedDiscordDownloadOptions } from "./trusted-download.js";
 
@@ -249,6 +255,13 @@ export function createDiscordClient(): Client {
 }
 
 export class DiscordBot {
+  private readonly liveUi: DiscordLiveUi;
+  private readonly activeProjects = new Map<string, AbortController>();
+  private closed = false;
+  private readonly controls = new Map<
+    string,
+    { guildId: string; userId: string; channelId: string; projectId: string }
+  >();
   public constructor(
     private readonly client: Client,
     private readonly guildId: string,
@@ -256,7 +269,9 @@ export class DiscordBot {
     private readonly application: HarnessHubApplication,
     private readonly logger: Logger,
     private readonly refreshProviderUsage?: () => Promise<void>,
-  ) {}
+  ) {
+    this.liveUi = new DiscordLiveUi(application);
+  }
 
   public async start(): Promise<void> {
     this.client.on(Events.InteractionCreate, (interaction) => {
@@ -291,10 +306,17 @@ export class DiscordBot {
   }
 
   public async stop(): Promise<void> {
+    this.closed = true;
+    for (const operation of this.activeProjects.values()) operation.abort();
+    this.controls.clear();
+    await this.liveUi.close();
     await this.client.destroy();
   }
 
   private async handleInteraction(interaction: Interaction): Promise<void> {
+    if (interaction.isButton() || interaction.isStringSelectMenu() || interaction.isModalSubmit()) {
+      if (await this.liveUi.handle(interaction)) return;
+    }
     if (interaction.isChatInputCommand()) await this.handleCommand(interaction);
     else if (interaction.isButton()) await this.handleButton(interaction);
   }
@@ -352,8 +374,8 @@ export class DiscordBot {
           const status = await this.application.getAuthStatus({ ...actor, channelId: interaction.channelId });
           await interaction.editReply(
             status.authenticated
-              ? `Pi authentication is available for: ${status.providers.join(", ") || "configured provider"}.`
-              : "Pi has no authenticated model available. Authenticate natively as the service account.",
+              ? `Pi authentication is available for: ${status.providers.join(", ") || "configured provider"}. ${discoveryLimitation}`
+              : `No authenticated Pi models found. ${discoveryLimitation} Check native Pi authentication locally.`,
           );
         } else {
           await this.application.installHarness({ ...actor, channelId: interaction.channelId });
@@ -493,19 +515,32 @@ export class DiscordBot {
         const sessionActor = { ...actor, channelId: interaction.channelId };
         const project = this.application.projectForChannel(sessionActor);
         const subcommand = interaction.options.getSubcommand();
+        let historyUnavailable = false;
+        const events = this.commandEvents(interaction);
+        const onSessionEvent = (event: HarnessEvent): void => {
+          if (event.type === "history-unavailable") historyUnavailable = true;
+          events(event);
+        };
+        const historyNotice = (): string =>
+          historyUnavailable
+            ? " Pi had no persisted first-session history; a new empty conversation was started. No prompt was replayed."
+            : "";
         if (subcommand === "stop") {
+          this.activeProjects.get(project.id)?.abort();
           await this.application.stop(actor, project.id);
           await interaction.editReply("Session stopped.");
         } else if (subcommand === "restart") {
           await this.application.restartProjectSession(
             sessionActor,
             { confirm: interaction.options.getString("confirm", true) },
-            () => undefined,
+            onSessionEvent,
           );
-          await interaction.editReply("Pi process restarted; packages and extensions were reloaded.");
+          await interaction.editReply(
+            `Pi process restarted; packages and extensions were reloaded.${historyNotice()}`,
+          );
         } else {
-          await this.application.resume(actor, project.id, () => undefined);
-          await interaction.editReply("Session resumed and idle.");
+          await this.application.resume(actor, project.id, onSessionEvent);
+          await interaction.editReply(`Session resumed and idle.${historyNotice()}`);
         }
       }
     } catch (error) {
@@ -515,14 +550,25 @@ export class DiscordBot {
   }
 
   private async handleButton(interaction: ButtonInteraction): Promise<void> {
-    const [namespace, action, projectId] = interaction.customId.split(":");
-    if (namespace !== "hh" || projectId === undefined || (action !== "stop" && action !== "resume")) return;
+    const [namespace, action, key] = interaction.customId.split(":");
+    if (namespace !== "hh") return;
     const actor = actorFrom(interaction.guildId, interaction.user.id);
     await interaction.deferReply({ flags: MessageFlags.Ephemeral });
     try {
-      if (action === "stop") await this.application.stop(actor, projectId);
-      else await this.application.resume(actor, projectId, () => undefined);
-      await interaction.editReply(action === "stop" ? "Session stopped." : "Session resumed and idle.");
+      const control = key === undefined ? undefined : this.controls.get(key);
+      if (
+        action !== "stop" ||
+        control?.guildId !== actor.guildId ||
+        control.userId !== actor.userId ||
+        control.channelId !== interaction.channelId ||
+        this.application.projectForChannel({ ...actor, channelId: interaction.channelId }).id !==
+          control.projectId
+      )
+        throw new Error("Stale session control");
+      this.controls.delete(key ?? "");
+      this.activeProjects.get(control.projectId)?.abort();
+      await this.application.stop(actor, control.projectId);
+      await interaction.editReply("Session stopped.");
     } catch (error) {
       this.logger.warn({ error, action }, "Discord session control failed");
       await interaction.editReply(safeDiscordError(error));
@@ -530,7 +576,8 @@ export class DiscordBot {
   }
 
   private async handleMessage(message: Message): Promise<void> {
-    if (message.author.bot || message.guildId === null || message.content.trim() === "") return;
+    if (this.closed || message.author.bot || message.guildId === null || message.content.trim() === "")
+      return;
     const actor = { guildId: message.guildId, userId: message.author.id };
     let project;
     try {
@@ -539,40 +586,99 @@ export class DiscordBot {
       return;
     }
 
-    let modelLabel = this.application.projectModelLabel({ ...actor, channelId: message.channelId });
+    if (this.activeProjects.has(project.id) || this.activeProjects.size >= 100) {
+      await message.reply({
+        content:
+          "Pi is busy. Answer its question or use /session stop. This message was not queued and will not be replayed.",
+        allowedMentions: { parse: [] },
+      });
+      return;
+    }
+    const operation = new AbortController();
+    this.activeProjects.set(project.id, operation);
+    try {
+      await this.runPrompt(message, actor, project.id, operation.signal);
+    } finally {
+      if (this.activeProjects.get(project.id) === operation) this.activeProjects.delete(project.id);
+    }
+  }
+
+  private async runPrompt(
+    message: Message,
+    actor: { guildId: string; userId: string },
+    projectId: string,
+    signal: AbortSignal,
+  ): Promise<void> {
+    let modelLabel = "unknown";
+    let historyUnavailable = false;
+    const historyNotice = (): string =>
+      historyUnavailable
+        ? "Pi had no persisted first-session history; a new empty conversation was started. No prompt was replayed.\n\n"
+        : "";
+    const controlId = randomUUID();
     const controls = new ActionRowBuilder<ButtonBuilder>().addComponents(
-      new ButtonBuilder().setCustomId(`hh:stop:${project.id}`).setLabel("Stop").setStyle(ButtonStyle.Danger),
+      new ButtonBuilder().setCustomId(`hh:stop:${controlId}`).setLabel("Stop").setStyle(ButtonStyle.Danger),
     );
     const tracker = new SessionProgress();
     const renderProgress = (): string =>
-      withModelFooter(tracker.render({ stalledAfterMs: stalledProgressAfterMs }), modelLabel);
+      withModelFooter(
+        tracker.render({
+          stalledAfterMs: stalledProgressAfterMs,
+          maximum: 2000 - withModelFooter("", modelLabel).length,
+        }),
+        modelLabel,
+      );
     const progress = await message.reply({
       content: renderProgress(),
       components: [controls],
       allowedMentions: { parse: [] },
     });
+    // Stop/shutdown may arrive while Discord is still delivering the first progress message.
+    if (signal.aborted) {
+      await progress.edit({
+        content: withModelFooter("Session stopped.", modelLabel),
+        components: [],
+        allowedMentions: { parse: [] },
+      });
+      return;
+    }
+    this.controls.set(controlId, { ...actor, channelId: message.channelId, projectId });
     let lastStatus = renderProgress();
+    let editing = false;
     let finished = false;
     let updateChain = Promise.resolve();
     const scheduleProgressUpdate = (): void => {
-      if (finished) return;
+      if (finished || editing) return;
       const status = renderProgress();
       if (status === lastStatus) return;
       lastStatus = status;
+      editing = true;
       updateChain = updateChain
         .then(async () =>
           progress.edit({ content: status, components: [controls], allowedMentions: { parse: [] } }),
         )
         .then(() => undefined)
         .catch((error: unknown) =>
-          this.logger.warn({ error, projectId: project.id }, "Could not update Discord progress"),
-        );
+          this.logger.warn({ error, projectId }, "Could not update Discord progress"),
+        )
+        .finally(() => {
+          editing = false;
+        });
     };
     const interval = setInterval(scheduleProgressUpdate, progressUpdateIntervalMs);
     const onEvent = (event: HarnessEvent): void => {
       if (event.type === "model-selected") modelLabel = `${event.provider}/${event.modelId}`;
+      if (event.type === "history-unavailable") historyUnavailable = true;
+      this.relayLiveEvent(
+        { ...actor, channelId: message.channelId },
+        event,
+        async (payload) => {
+          if (!message.channel.isSendable()) throw new Error("Discord channel is unavailable");
+          return message.channel.send(payload);
+        },
+        modelLabel,
+      );
       tracker.record(event);
-      scheduleProgressUpdate();
     };
 
     try {
@@ -583,7 +689,10 @@ export class DiscordBot {
       finished = true;
       clearInterval(interval);
       await updateChain;
-      const chunks = splitDiscordMessageWithModelFooter(answer, modelLabel);
+      const chunks = splitDiscordMessageWithModelFooter(
+        historyNotice() + escapeMarkdownText(publicText(answer, 3500)),
+        modelLabel,
+      );
       await progress.edit({
         content: chunks.shift() ?? "Pi completed.",
         components: [],
@@ -599,15 +708,54 @@ export class DiscordBot {
     } catch (error) {
       finished = true;
       clearInterval(interval);
-      this.logger.warn({ error, projectId: project.id }, "Pi prompt failed");
+      this.logger.warn({ error, projectId }, "Pi prompt failed");
       await updateChain;
       await progress.edit({
-        content: withModelFooter(safeDiscordError(error), modelLabel),
+        content: withModelFooter(historyNotice() + safeDiscordError(error), modelLabel),
         components: [],
         allowedMentions: { parse: [] },
       });
     } finally {
+      this.controls.delete(controlId);
       this.triggerProviderUsageRefresh();
+    }
+  }
+
+  private commandEvents(interaction: ChatInputCommandInteraction): (event: HarnessEvent) => void {
+    const actor = {
+      ...actorFrom(interaction.guildId, interaction.user.id),
+      channelId: interaction.channelId,
+    };
+    let modelLabel = "unknown";
+    return (event) => {
+      if (event.type === "model-selected") modelLabel = `${event.provider}/${event.modelId}`;
+      this.relayLiveEvent(
+        actor,
+        event,
+        async (payload) => {
+          const channel = interaction.channel;
+          if (!channel?.isSendable()) throw new Error("Discord channel is unavailable");
+          return channel.send(payload);
+        },
+        modelLabel,
+      );
+    };
+  }
+
+  private relayLiveEvent(
+    actor: { guildId: string; userId: string; channelId: string },
+    event: HarnessEvent,
+    send: Parameters<DiscordLiveUi["publish"]>[2],
+    modelLabel: string,
+  ): void {
+    if (event.type === "ui-request") {
+      void this.liveUi
+        .publish(actor, event, send, modelLabel)
+        .catch(() => this.logger.warn("Could not publish Pi question"));
+    } else if (event.type === "ui-closed") {
+      void this.liveUi
+        .closedRequest(event.sessionId, event.requestId)
+        .catch(() => this.logger.warn("Could not close Pi question"));
     }
   }
 
@@ -696,19 +844,22 @@ function formatJob(job: Job): string {
   return `${job.id.slice(0, 8)} ${job.type} [${job.status}] created:${job.createdAt}${error}`;
 }
 
+const discoveryLimitation = "Extension discovery is disabled; extension-only providers are not assessed.";
+
 function formatModels(models: readonly ModelDescriptor[], maximumLength = 1900): string {
-  if (models.length === 0) return "No Pi models are currently available. Check native Pi authentication.";
+  if (models.length === 0)
+    return `No Pi models found. ${discoveryLimitation} Check native Pi authentication locally.`;
   const lines: string[] = [];
   for (const model of models) {
     const line = `${model.provider}/${model.id}${model.label === "" ? "" : ` — ${model.label}`}`;
     const next = [...lines, line].join("\n");
-    if (next.length > maximumLength) {
+    if (next.length > maximumLength - discoveryLimitation.length - 2) {
       lines.push(`…and ${String(models.length - lines.length)} more model(s).`);
       break;
     }
     lines.push(line);
   }
-  return lines.join("\n");
+  return `${lines.join("\n")}\n\n${discoveryLimitation}`;
 }
 
 function resourceScope(value: string): ResourceScope {
@@ -743,19 +894,10 @@ function formatResource(resource: HarnessResource): string {
   return `${id} ${resource.scope}${project} ${resource.type} ${resource.source} [${resource.status}]${error}`;
 }
 
-export function withModelFooter(message: string, modelLabel: string): string {
-  const safeModel =
-    modelLabel
-      .replace(/[\r\n\0]/g, " ")
-      .trim()
-      .slice(0, 160) || "unknown";
-  return `${message}\n\nModel used: ${safeModel}`;
-}
-
 export function splitDiscordMessageWithModelFooter(
   message: string,
   modelLabel: string,
-  maximum = 1900,
+  maximum = discordContentMaximum,
 ): string[] {
   const footer = withModelFooter("", modelLabel).slice(2);
   const contentMaximum = Math.max(1, maximum - footer.length - 2);
@@ -814,6 +956,10 @@ export function safeDiscordError(error: unknown): string {
       "ResourceScopeMismatchError",
       "SessionBusyError",
       "SessionStoppedError",
+      "PiInitializationUiUnsupportedError",
+      "NativePiCommandUnsupportedError",
+      "PiPromptLifecycleUnsupportedError",
+      "PiSessionHistoryError",
       "SessionRestartConfirmationError",
       "SessionRestartUnsupportedError",
       "WorkspaceDegradedError",

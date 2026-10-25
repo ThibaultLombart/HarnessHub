@@ -1,4 +1,10 @@
-import { SessionBusyError, type HarnessAdapter, type HarnessEvent } from "../domain/harness.js";
+import {
+  assertOperationActive,
+  SessionBusyError,
+  type HarnessAdapter,
+  type HarnessEvent,
+} from "../domain/harness.js";
+import type { UiResponse } from "../domain/live-interface.js";
 import { assertProjectActive, type Project } from "../domain/project.js";
 
 export type Actor = Readonly<{ guildId: string; userId: string }>;
@@ -39,7 +45,10 @@ export class UnmappedChannelError extends Error {
   }
 }
 
+export type OperationPreflight = (signal: AbortSignal) => Promise<void>;
+
 export class HarnessHub {
+  private readonly operations = new Map<string, AbortController>();
   public constructor(
     private readonly boundary: { guildId: string; administratorId: string },
     private readonly repositories: HarnessHubRepositories,
@@ -73,45 +82,65 @@ export class HarnessHub {
   public async prompt(
     input: Actor & { channelId: string; content: string },
     onEvent: (event: HarnessEvent) => void,
+    preflight?: OperationPreflight,
   ): Promise<string> {
     this.authorize(input);
     const project = this.repositories.projects.findByChannelId(input.channelId);
     if (project === undefined) throw new UnmappedChannelError();
     assertProjectActive(project);
-    const previous = this.repositories.sessions.findLatestByProject(project.id);
-    const startInput = {
-      projectId: project.id,
-      cwd: project.path,
-      name: project.slug,
-      ...modelPreferenceInput(this.repositories.modelPreferences.findByProject(project.id)),
-      onEvent,
-      ...(previous?.externalSessionId === null || previous?.externalSessionId === undefined
-        ? {}
-        : { externalSessionId: previous.externalSessionId }),
-    };
-    const session = await this.adapter.startSession(startInput);
-    if (session.isBusy) throw new SessionBusyError();
-    if (session.model !== null) {
-      onEvent({ type: "model-selected", provider: session.model.provider, modelId: session.model.id });
-    }
-    this.repositories.sessions.recordStarted(project.id, "pi", session.externalSessionId);
-    this.repositories.sessions.updateStatus(project.id, "working");
-    try {
-      const answer = await session.sendPrompt(input.content);
-      this.repositories.sessions.updateStatus(project.id, "idle");
-      return answer;
-    } catch (error) {
-      this.repositories.sessions.updateStatus(
-        project.id,
-        error instanceof Error && error.name === "SessionStoppedError" ? "stopped" : "failed",
-      );
-      throw error;
-    }
+    return this.runOperation(project.id, preflight, async (signal) => {
+      const previous = this.repositories.sessions.findLatestByProject(project.id);
+      const startInput = {
+        projectId: project.id,
+        cwd: project.path,
+        name: project.slug,
+        ...modelPreferenceInput(this.repositories.modelPreferences.findByProject(project.id)),
+        onEvent,
+        ...(previous?.externalSessionId === null || previous?.externalSessionId === undefined
+          ? {}
+          : { externalSessionId: previous.externalSessionId }),
+      };
+      const session = await this.adapter.startSession({ ...startInput, signal });
+      assertOperationActive(signal);
+      if (session.isBusy) throw new SessionBusyError();
+      if (session.model !== null) {
+        onEvent({ type: "model-selected", provider: session.model.provider, modelId: session.model.id });
+      }
+      this.repositories.sessions.recordStarted(project.id, "pi", session.externalSessionId);
+      this.repositories.sessions.updateStatus(project.id, "working");
+      try {
+        assertOperationActive(signal);
+        const answer = await session.sendPrompt(input.content);
+        assertOperationActive(signal);
+        this.repositories.sessions.updateStatus(project.id, "idle");
+        return answer;
+      } catch (error) {
+        this.repositories.sessions.updateStatus(
+          project.id,
+          error instanceof Error && error.name === "SessionStoppedError" ? "stopped" : "failed",
+        );
+        throw error;
+      }
+    });
+  }
+
+  public async respondUi(
+    input: Actor & { channelId: string; sessionId: string; requestId: string },
+    response: UiResponse,
+  ): Promise<void> {
+    this.authorize(input);
+    const project = this.repositories.projects.findByChannelId(input.channelId);
+    if (project === undefined) throw new UnmappedChannelError();
+    assertProjectActive(project);
+    const session = this.adapter.getSession(project.id);
+    if (session?.respondUi === undefined) throw new Error("Question is stale or unavailable");
+    await session.respondUi(input.sessionId, input.requestId, response);
   }
 
   public async stop(actor: Actor, projectId: string): Promise<void> {
     this.authorize(actor);
     if (this.repositories.projects.findById(projectId) === undefined) throw new Error("Project not found");
+    this.operations.get(projectId)?.abort();
     await this.adapter.stopSession(projectId);
     this.repositories.sessions.updateStatus(projectId, "stopped");
   }
@@ -120,43 +149,80 @@ export class HarnessHub {
     actor: Actor,
     projectId: string,
     onEvent: (event: HarnessEvent) => void,
+    preflight?: OperationPreflight,
   ): Promise<void> {
     this.authorize(actor);
     const project = this.repositories.projects.findById(projectId);
     if (project === undefined) throw new Error("Project not found");
     assertProjectActive(project);
-    if (this.adapter.getSession(projectId)?.isBusy === true) throw new SessionBusyError();
     if (this.adapter.restartSession === undefined) throw new SessionRestartUnsupportedError();
-    await this.adapter.restartSession(projectId);
-    this.repositories.sessions.updateStatus(projectId, "stopped");
-    await this.resume(actor, projectId, onEvent);
+    await this.runOperation(projectId, preflight, async (signal) => {
+      await this.adapter.restartSession?.(projectId);
+      assertOperationActive(signal);
+      this.repositories.sessions.updateStatus(projectId, "stopped");
+      await this.resumeProject(project, onEvent, signal);
+    });
   }
 
   public async resume(
     actor: Actor,
     projectId: string,
     onEvent: (event: HarnessEvent) => void,
+    preflight?: OperationPreflight,
   ): Promise<void> {
     this.authorize(actor);
     const project = this.repositories.projects.findById(projectId);
     if (project === undefined) throw new Error("Project not found");
     assertProjectActive(project);
+    await this.runOperation(projectId, preflight, async (signal) =>
+      this.resumeProject(project, onEvent, signal),
+    );
+  }
+
+  private async resumeProject(
+    project: Project,
+    onEvent: (event: HarnessEvent) => void,
+    signal: AbortSignal,
+  ): Promise<void> {
+    assertOperationActive(signal);
     const previous = this.repositories.sessions.findLatestByProject(project.id);
     const session = await this.adapter.startSession({
       projectId: project.id,
       cwd: project.path,
       name: project.slug,
+      signal,
       ...modelPreferenceInput(this.repositories.modelPreferences.findByProject(project.id)),
       onEvent,
       ...(previous?.externalSessionId === null || previous?.externalSessionId === undefined
         ? {}
         : { externalSessionId: previous.externalSessionId }),
     });
+    assertOperationActive(signal);
     if (session.model !== null) {
       onEvent({ type: "model-selected", provider: session.model.provider, modelId: session.model.id });
     }
+    assertOperationActive(signal);
     this.repositories.sessions.recordStarted(project.id, "pi", session.externalSessionId);
     this.repositories.sessions.updateStatus(project.id, "idle");
+  }
+
+  /** Reserve synchronously, before application resource/status I/O or process registration. */
+  private async runOperation<T>(
+    projectId: string,
+    preflight: OperationPreflight | undefined,
+    run: (signal: AbortSignal) => Promise<T>,
+  ): Promise<T> {
+    if (this.operations.has(projectId) || this.adapter.getSession(projectId)?.isBusy === true)
+      throw new SessionBusyError();
+    const operation = new AbortController();
+    this.operations.set(projectId, operation);
+    try {
+      await preflight?.(operation.signal);
+      assertOperationActive(operation.signal);
+      return await run(operation.signal);
+    } finally {
+      if (this.operations.get(projectId) === operation) this.operations.delete(projectId);
+    }
   }
 }
 
