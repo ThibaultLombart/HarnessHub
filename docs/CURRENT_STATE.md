@@ -43,7 +43,7 @@ The base MVP was validated on a real Linux/systemd VM, Discord guild, and authen
 - backup guidance through `/backup status`;
 - MCP capability status through `/mcp status`;
 - runtime status through `/system status`;
-- Discord-triggered update check through `/system update-check`; updater application remains an operator-controlled manual procedure unless a host deliberately authorizes a reviewed root helper.
+- Discord-triggered update check through `/system update-check`; update apply is intentionally disabled. Installation, updates, and rollback are manual trusted-checkout operator procedures, without service-account installer privileges.
 
 See [`DISCORD_COMMANDS.md`](DISCORD_COMMANDS.md) for command usage and security notes.
 
@@ -82,7 +82,7 @@ The live exercise exposed and resolved incorrect application artifact modes, inh
 - validate Unicode project-status channel renames against the live Discord guild;
 - validate `/project delete` on a disposable project and confirm dirty-Git protection;
 - validate `/files upload` from Discord with normal and rejected paths;
-- validate `/system update-check` and keep update application as a manual operator procedure unless a reviewed root helper/sudoers rule is explicitly authorized for a personal test host;
+- validate `/system update-check`; keep installation, update, and rollback manual, with update apply disabled and no service-account privileged installer permissions;
 - validate HTTPS/SSH cloning and `/git link` against real remotes using service-account credentials;
 - record `systemd-analyze security` output;
 - capture and restore a real backup from `/backup status` guidance, including stopping the service, copying `/var/lib/harnesshub` and the workspace root, restoring them to a disposable host or state directory, verifying ownership/modes, starting the service, and checking `/repair status`, `/backup status`, and a disposable project before trusting the backup.

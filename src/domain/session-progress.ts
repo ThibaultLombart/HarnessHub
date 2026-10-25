@@ -1,4 +1,6 @@
+import { escapeMarkdownText } from "./display-text.js";
 import type { HarnessEvent } from "./harness.js";
+import { publicText, safeToolName, type SubagentStatus } from "./live-interface.js";
 
 export type Clock = () => number;
 
@@ -11,6 +13,10 @@ export class SessionProgress {
   private readonly startedAt: number;
   private lastActivityAt: number;
   private phase = "starting";
+  private readonly questions = new Set<string>();
+  private explanation = "";
+  private historyUnavailable = false;
+  private agents: readonly SubagentStatus[] = [];
   private activeTool: string | undefined;
   private activeToolStartedAt: number | undefined;
   private readonly recentTools: ProgressTool[] = [];
@@ -33,37 +39,57 @@ export class SessionProgress {
       return;
     }
     if (event.type === "model-selected") return;
+    if (event.type === "history-unavailable") {
+      this.historyUnavailable = true;
+      return;
+    }
+    if (event.type === "ui-request") {
+      if (this.questions.size < 4) this.questions.add(event.request.id);
+      return;
+    }
+    if (event.type === "ui-closed") {
+      this.questions.delete(event.requestId);
+      return;
+    }
+    if (event.type === "public-explanation") {
+      this.explanation = publicText(event.text, 500);
+      return;
+    }
+    if (event.type === "subagents") {
+      this.agents = event.agents.slice(0, 8);
+      return;
+    }
     if (event.type === "turn-start") {
       this.turnCount += 1;
-      this.phase = this.completedToolCount === 0 ? "analyzing the request" : "planning the next step";
+      this.phase = "assistant turn started";
       this.activeTool = undefined;
       this.activeToolStartedAt = undefined;
       return;
     }
     if (event.type === "message-start") {
-      this.phase = this.completedToolCount === 0 ? "analyzing the request" : "reviewing the work so far";
+      this.phase = "message started";
       return;
     }
     if (event.type === "message-end") {
-      this.phase = "deciding the next action";
+      this.phase = "message completed";
       return;
     }
     if (event.type === "tool-start") {
-      this.activeTool = sanitizeLabel(event.toolName);
+      this.activeTool = safeToolName(event.toolName);
       this.activeToolStartedAt = this.clock();
       this.phase = describeTool(this.activeTool);
       this.toolUpdateCount = 0;
       return;
     }
     if (event.type === "tool-update") {
-      this.activeTool = sanitizeLabel(event.toolName);
+      this.activeTool = safeToolName(event.toolName);
       this.activeToolStartedAt ??= this.clock();
       this.phase = describeTool(this.activeTool);
       this.toolUpdateCount += 1;
       return;
     }
     if (event.type === "tool-end") {
-      const name = sanitizeLabel(event.toolName);
+      const name = safeToolName(event.toolName);
       this.completedToolCount += 1;
       if (event.failed) this.failedToolCount += 1;
       this.phase = event.failed ? "recovering from a failed action" : "checking the result";
@@ -106,7 +132,9 @@ export class SessionProgress {
     this.activeTool = undefined;
   }
 
-  public render(options: { stalledAfterMs: number; now?: number } = { stalledAfterMs: 120_000 }): string {
+  public render(
+    options: { stalledAfterMs: number; now?: number; maximum?: number } = { stalledAfterMs: 120_000 },
+  ): string {
     const now = options.now ?? this.clock();
     const idleFor = Math.max(0, now - this.lastActivityAt);
     const failed = this.failedToolCount === 0 ? "" : ` · ${String(this.failedToolCount)} failed`;
@@ -115,7 +143,7 @@ export class SessionProgress {
       this.compactionCount === 0 ? "" : ` · ${countLabel(this.compactionCount, "compaction")}`;
     const lines = [
       "Pi is working…",
-      `Stage: ${this.phase}`,
+      `Stage: ${this.questions.size > 0 ? "waiting for your response" : this.phase}`,
       `Progress: ${countLabel(this.turnCount, "turn")} · ${countLabel(this.completedToolCount, "action")} completed${failed}${retries}${compactions}`,
     ];
     if (this.activeTool !== undefined) {
@@ -127,17 +155,44 @@ export class SessionProgress {
     lines.push(
       `Timing: ${formatDuration(now - this.startedAt)} elapsed · last activity ${formatDuration(idleFor)} ago`,
     );
-    if (this.recentTools.length > 0) {
+    if (this.historyUnavailable)
       lines.push(
+        "Pi had no persisted first-session history; a new empty conversation was started. No prompt was replayed.",
+      );
+    const optional: string[] = [];
+    if (this.recentTools.length > 0) {
+      optional.push(
         `Recent actions: ${this.recentTools
           .map((tool) => `${tool.name} ${tool.failed ? "✗" : "✓"}`)
           .join(", ")}`,
       );
     }
-    if (idleFor >= options.stalledAfterMs) {
-      lines.push("⚠️ No Pi event recently; it may be stalled or running a long operation.");
+    if (this.explanation !== "") optional.push(`Public update: ${escapeMarkdownText(this.explanation)}`);
+    for (const agent of this.agents) {
+      const elapsed =
+        agent.startedAt === undefined
+          ? "duration unknown"
+          : formatDuration(Math.max(0, (agent.endedAt ?? now) - agent.startedAt));
+      optional.push(
+        `Subagent ${escapeMarkdownText(publicText(agent.role, 30))}: ${escapeMarkdownText(publicText(agent.status, 30))} · ${elapsed}`,
+      );
     }
-    return lines.join("\n");
+    const warning =
+      idleFor >= options.stalledAfterMs
+        ? ["⚠️ No Pi event recently; it may be stalled or running a long operation."]
+        : [];
+    const maximum = options.maximum ?? 2000;
+    const render = (omitted: boolean): string =>
+      [
+        ...lines,
+        ...optional,
+        ...(omitted ? ["Additional public updates/subagent rows omitted to fit Discord."] : []),
+        ...warning,
+      ].join("\n");
+    if (render(false).length <= maximum) return render(false);
+    // Drop whole optional rows, never slice escaped Markdown or lifecycle evidence.
+    while (optional.length > 0 && render(true).length > maximum) optional.pop();
+    return render(true);
   }
 }
 
@@ -156,15 +211,6 @@ function describeTool(toolName: string): string {
     return "consulting external documentation";
   if (normalized.includes("bash") || normalized.includes("shell")) return "running a project command";
   return "performing a project action";
-}
-
-function sanitizeLabel(value: string): string {
-  return (
-    value
-      .replace(/[\r\n\0]/g, " ")
-      .trim()
-      .slice(0, 80) || "unknown"
-  );
 }
 
 function formatDuration(milliseconds: number): string {

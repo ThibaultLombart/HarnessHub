@@ -37,7 +37,7 @@ Treat as untrusted:
 16. Repository URLs containing credentials are rejected. Clones use only service-account credentials, and unknown SSH host keys are never accepted automatically.
 17. Pi's internal approval configuration does not authorize privileged HarnessHub operations; destructive or hard-to-reverse HarnessHub actions require their own explicit confirmation.
 18. Project deletion requires exact slug confirmation, no active session, and a clean Git worktree.
-19. Applying an update requires a clean trusted checkout, fast-forward-only Git update, local checks, and explicit operator authorization for installer execution. Discord may report update availability, but install execution is manual unless the host owner deliberately authorizes a reviewed root helper for a personal/test host.
+19. Installation, update, and rollback require manual operator action from a reviewed trusted checkout and local checks. Discord may report update availability; update apply is intentionally disabled. Do not grant the service account privileged installer permissions or introduce a Discord-triggered privileged helper.
 20. Discord responses avoid returning sensitive absolute server paths when a relative user-facing path is sufficient.
 
 ## Resource and package installation
@@ -52,7 +52,7 @@ Pi has no native MCP capability in the pinned documentation. MCP-like functional
 
 ## Discord-assisted updates
 
-`/system update-check` may inspect the trusted checkout and report whether an update is available. Applying an update remains a trust operation: an operator updates the checkout, runs dependency installation and checks, and invokes the installer from a reviewed path. The service account must not receive broad sudo rights. If a personal/test host later enables Discord-triggered update apply, restrict authorization to a reviewed root-owned installer/helper path and keep fast-forward-only and local-check requirements.
+`/system update-check` may inspect the trusted checkout and report whether an update is available. `/system update-apply` is intentionally disabled, regardless of host privileges. An operator manually updates the trusted checkout, installs dependencies, runs checks, and invokes the reviewed installer; rollback is likewise manual. Do not grant the service account privileged installer permissions or sudo rights. Retain the hardened service unit.
 
 ## Codex usage polling
 

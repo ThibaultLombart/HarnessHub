@@ -14,7 +14,7 @@ Checks whether Pi is installed and records the detected version/status.
 
 ### `/harness auth`
 
-Checks Pi's native provider authentication by asking Pi for available models. HarnessHub does not collect provider credentials through Discord.
+Checks Pi's native provider authentication by asking an extension-disabled Pi process for available models. HarnessHub does not collect provider credentials through Discord. Executable provider extensions are not loaded for discovery, so their dynamically registered models may be absent; an empty catalogue is not proof that such providers are unauthenticated.
 
 ### `/harness install`
 
@@ -64,11 +64,13 @@ Safety rules:
 
 A non-empty message in a mapped project channel becomes a Pi prompt. HarnessHub starts or resumes Pi in the exact project directory. Concurrent prompts for the same project are rejected with a clear busy response.
 
-The progress message shows the current observable stage in plain language, the active action and its running time, completed/failed action counts, turn/retry/compaction counts, recent actions, total elapsed time, last activity age, and a possible-stall warning. It deliberately does not invent a completion percentage or expose chain-of-thought, command arguments, raw tool output, or secrets. Every progress, completion, continuation, and safe-error message ends with `Model used: provider/model-id`; before a new default-model session reports its state, the initial value may briefly read `Pi default`. HarnessHub does not stream every token to Discord.
+The progress message shows the current observable stage in plain language, the active action and its running time, completed/failed action counts, turn/retry/compaction counts, recent actions, total elapsed time, last activity age, and a possible-stall warning. It deliberately does not invent a completion percentage or expose chain-of-thought, command arguments, raw tool output, or secrets. Every progress, completion, continuation, and safe-error message ends with `Model used: provider/model-id`; before the current runtime reports its model, the initial value reads `unknown`. HarnessHub does not stream every token to Discord.
+
+See [`PI_LIVE_INTERFACE.md`](PI_LIVE_INTERFACE.md) for select/button/modal questions, privacy, version compatibility, and troubleshooting. Native Pi slash commands sent as message text are rejected before dispatch; inline extension commands do not have a verified settled-event completion contract. Ordinary prompts remain supported. Pi 0.85.1 startup dialogs are unsupported and fail promptly without displaying approval controls.
 
 ### `/session stop`
 
-Stops the active Pi operation for the current project. Safe to repeat.
+Cancels the project's reserved operation, including resource/status preflight and initialization before a Pi process exists, then stops any active Pi operation. Safe to repeat. Cancelled preflight cannot later spawn Pi or send the prompt.
 
 ### `/session resume`
 
@@ -107,7 +109,7 @@ Removes a managed resource using Pi's native remove command and marks it removed
 
 ### `/model list`
 
-Lists models available to Pi using native Pi authentication in the current context.
+Lists models available through Pi's native registry/authentication with extension discovery disabled. Providers registered only by executable extensions are deliberately excluded from this observational command; no safe non-executing dynamic-provider discovery contract has been verified.
 
 ### `/model status`
 
@@ -182,14 +184,4 @@ Run in `#workspace-management`. Checks the configured trusted Git checkout for u
 
 ### `/system update-apply confirm:UPDATE`
 
-Run in `#workspace-management`. Attempts a fast-forward update from the configured checkout:
-
-1. verifies exact `UPDATE` confirmation;
-2. checks the checkout is clean;
-3. fetches/prunes;
-4. fast-forwards only;
-5. runs `npm ci`;
-6. runs `npm run check`;
-7. runs `sudo -n ./scripts/install.sh --no-pi-login`.
-
-This requires explicit host authorization for the non-root service account to run the installer non-interactively. If sudo/systemd policy does not allow it, the command fails safely and leaves the current service running.
+Intentionally disabled in the application. It does not install, update, or invoke a privileged installer. Do not grant installer privileges to the service account. Use the manual trusted-checkout installation/update/rollback procedure in [`INSTALLATION.md`](INSTALLATION.md).

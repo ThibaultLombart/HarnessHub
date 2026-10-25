@@ -7,7 +7,7 @@ export type RpcRecord = Record<string, unknown>;
 type PendingRequest = {
   resolve(value: RpcRecord): void;
   reject(error: Error): void;
-  timer: NodeJS.Timeout;
+  timer: NodeJS.Timeout | undefined;
 };
 
 export class PiRpcClient {
@@ -15,6 +15,7 @@ export class PiRpcClient {
   private readonly pending = new Map<string, PendingRequest>();
   private readonly listeners = new Set<(event: RpcRecord) => void>();
   private closed = false;
+  private closing: Promise<void> | undefined;
   private stderr = "";
 
   public constructor(input: { command: string; arguments: readonly string[]; cwd: string }) {
@@ -23,6 +24,8 @@ export class PiRpcClient {
       env: { ...process.env, PI_SKIP_VERSION_CHECK: "1" },
       shell: false,
       windowsHide: true,
+      // A private process group lets shutdown also terminate extension/tool descendants.
+      detached: process.platform !== "win32",
       stdio: ["pipe", "pipe", "pipe"],
     });
     const parser = new JsonlParser((record) => this.handleRecord(record));
@@ -43,6 +46,7 @@ export class PiRpcClient {
     this.child.stderr.on("data", (chunk: Buffer) => {
       this.stderr = `${this.stderr}${chunk.toString("utf8")}`.slice(-8192);
     });
+    this.child.stdin.on("error", () => this.fail(new Error("Pi RPC input failed")));
     this.child.on("error", (error) => this.fail(error));
     this.child.on("exit", (code, signal) => {
       if (!this.closed) {
@@ -57,6 +61,27 @@ export class PiRpcClient {
     return () => this.listeners.delete(listener);
   }
 
+  /** UI responses are not commands and have no acknowledgement in Pi RPC. */
+  public async respondUi(id: string, response: Readonly<Record<string, unknown>>): Promise<void> {
+    if (this.closed) throw new Error("Pi RPC process is closed");
+    await new Promise<void>((resolve, reject) => {
+      const timer = setTimeout(() => {
+        this.fail(new Error("Pi UI response delivery timed out"));
+        reject(new Error("Pi UI response delivery timed out"));
+      }, 5_000);
+      this.child.stdin.write(
+        `${JSON.stringify({ type: "extension_ui_response", id, ...response })}\n`,
+        (error) => {
+          clearTimeout(timer);
+          if (error) {
+            this.fail(new Error("Pi UI response delivery failed"));
+            reject(new Error("Pi UI response delivery failed"));
+          } else resolve();
+        },
+      );
+    });
+  }
+
   public async command(
     type: string,
     data: Readonly<Record<string, unknown>> = {},
@@ -65,10 +90,13 @@ export class PiRpcClient {
     if (this.closed) throw new Error("Pi RPC process is closed");
     const id = randomUUID();
     const response = new Promise<RpcRecord>((resolve, reject) => {
-      const timer = setTimeout(() => {
-        this.pending.delete(id);
-        reject(new Error(`Pi RPC command timed out: ${type}`));
-      }, timeoutMs);
+      const timer =
+        timeoutMs > 0
+          ? setTimeout(() => {
+              this.pending.delete(id);
+              reject(new Error(`Pi RPC command timed out: ${type}`));
+            }, timeoutMs)
+          : undefined;
       this.pending.set(id, { resolve, reject, timer });
     });
     this.child.stdin.write(`${JSON.stringify({ id, type, ...data })}\n`, (error) => {
@@ -80,26 +108,75 @@ export class PiRpcClient {
     return result;
   }
 
-  public async close(): Promise<void> {
-    if (this.closed) return;
+  public close(): Promise<void> {
+    if (this.closing !== undefined) return this.closing;
     this.closed = true;
     for (const [id] of this.pending) this.rejectPending(id, new Error("Pi RPC process closed"));
-    this.child.stdin.end();
-    if (this.child.exitCode !== null || this.child.signalCode !== null) return;
-    await new Promise<void>((resolve) => {
-      const timer = setTimeout(() => {
-        if (this.child.exitCode === null && this.child.signalCode === null) this.child.kill("SIGKILL");
+    this.closing = new Promise<void>((resolve, reject) => {
+      if (this.child.pid === undefined) {
         resolve();
+        return;
+      }
+      if (this.child.exitCode !== null || this.child.signalCode !== null) {
+        try {
+          this.signalTree("SIGKILL");
+          resolve();
+        } catch (error) {
+          reject(error instanceof Error ? error : new Error("Pi process termination failed"));
+        }
+        return;
+      }
+      const deadline = setTimeout(() => {
+        cleanup();
+        reject(new Error("Pi process termination could not be confirmed"));
+      }, 4_000);
+      const cleanup = (): void => {
+        clearTimeout(killTimer);
+        clearTimeout(deadline);
+        this.child.removeListener("exit", exited);
+      };
+      const exited = (): void => {
+        cleanup();
+        // Descendants may survive their parent and ignore SIGTERM.
+        try {
+          this.signalTree("SIGKILL");
+          resolve();
+        } catch (error) {
+          reject(error instanceof Error ? error : new Error("Pi process termination failed"));
+        }
+      };
+      this.child.once("exit", exited);
+      const killTimer = setTimeout(() => {
+        try {
+          this.signalTree("SIGKILL");
+        } catch (error) {
+          cleanup();
+          reject(error instanceof Error ? error : new Error("Pi process termination failed"));
+        }
       }, 2_000);
-      this.child.once("exit", () => {
-        clearTimeout(timer);
-        resolve();
-      });
-      this.child.kill("SIGTERM");
+      try {
+        this.signalTree("SIGTERM");
+      } catch (error) {
+        cleanup();
+        reject(error instanceof Error ? error : new Error("Pi process termination failed"));
+      }
+      this.child.stdin.destroy();
     });
+    return this.closing;
+  }
+
+  private signalTree(signal: NodeJS.Signals): void {
+    if (this.child.pid === undefined) return;
+    try {
+      if (process.platform === "win32") this.child.kill(signal);
+      else process.kill(-this.child.pid, signal);
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "ESRCH") throw error;
+    }
   }
 
   private handleRecord(value: unknown): void {
+    if (this.closed) return;
     if (value === null || typeof value !== "object" || Array.isArray(value)) {
       this.fail(new Error("Pi RPC emitted a non-object record"));
       return;
@@ -127,10 +204,9 @@ export class PiRpcClient {
 
   private fail(error: Error): void {
     if (this.closed) return;
-    this.closed = true;
     const safeError = new Error(`${error.message}${this.stderr === "" ? "" : "; Pi reported an error"}`);
     for (const [id] of this.pending) this.rejectPending(id, safeError);
+    void this.close().catch(() => undefined);
     for (const listener of this.listeners) listener({ type: "process_error", error: safeError.message });
-    if (this.child.exitCode === null && this.child.signalCode === null) this.child.kill("SIGKILL");
   }
 }
